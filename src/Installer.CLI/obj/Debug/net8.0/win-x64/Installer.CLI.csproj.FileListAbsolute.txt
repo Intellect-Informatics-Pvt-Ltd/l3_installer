@@ -1,0 +1,15 @@
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.CLI/bin/Debug/net8.0/win-x64/Installer.CLI.exe
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.CLI/bin/Debug/net8.0/win-x64/Installer.CLI.deps.json
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.CLI/bin/Debug/net8.0/win-x64/Installer.CLI.runtimeconfig.json
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.CLI/bin/Debug/net8.0/win-x64/Installer.CLI.dll
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.CLI/bin/Debug/net8.0/win-x64/Installer.CLI.pdb
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.CLI/obj/Debug/net8.0/win-x64/Installer.CLI.GeneratedMSBuildEditorConfig.editorconfig
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.CLI/obj/Debug/net8.0/win-x64/Installer.CLI.AssemblyInfoInputs.cache
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.CLI/obj/Debug/net8.0/win-x64/Installer.CLI.AssemblyInfo.cs
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.CLI/obj/Debug/net8.0/win-x64/Installer.CLI.csproj.CoreCompileInputs.cache
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.CLI/obj/Debug/net8.0/win-x64/Installer.CLI.sourcelink.json
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.CLI/obj/Debug/net8.0/win-x64/Installer.CLI.dll
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.CLI/obj/Debug/net8.0/win-x64/refint/Installer.CLI.dll
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.CLI/obj/Debug/net8.0/win-x64/Installer.CLI.pdb
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.CLI/obj/Debug/net8.0/win-x64/Installer.CLI.genruntimeconfig.cache
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.CLI/obj/Debug/net8.0/win-x64/ref/Installer.CLI.dll

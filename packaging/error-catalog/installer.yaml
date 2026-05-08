@@ -1,0 +1,282 @@
+errors:
+  # ═══════════════════════════════════════════════════════════════
+  # PRECHECK ERRORS (ERP-INST-PRE-0001 to ERP-INST-PRE-0099)
+  # ═══════════════════════════════════════════════════════════════
+  - code: "ERP-INST-PRE-0001"
+    title: "Unsupported Windows version"
+    userMessage: "Windows 10 version 1809 or later is required."
+    supportMessage: "OS version check failed. Detected build: {detected_build}. Required: {required_build}."
+    severity: "Error"
+    retryable: false
+    category: "Validation"
+
+  - code: "ERP-INST-PRE-0002"
+    title: "Unsupported architecture"
+    userMessage: "64-bit Windows is required."
+    supportMessage: "Architecture check failed. Detected: {detected_arch}."
+    severity: "Error"
+    retryable: false
+    category: "Validation"
+
+  - code: "ERP-INST-PRE-0003"
+    title: "Insufficient system disk space"
+    userMessage: "Low space on system drive. Installer will use data volume for staging."
+    supportMessage: "System drive {drive} has {free_gb} GB free. Threshold: {threshold_gb} GB."
+    severity: "Warning"
+    retryable: false
+    category: "Validation"
+
+  - code: "ERP-INST-PRE-0004"
+    title: "Insufficient data disk space"
+    userMessage: "Data volume needs at least {required_gb} GB free space."
+    supportMessage: "Data volume {volume} has {free_gb} GB free. Required: {required_gb} GB."
+    severity: "Error"
+    retryable: false
+    category: "Validation"
+
+  - code: "ERP-INST-PRE-0005"
+    title: "Insufficient RAM"
+    userMessage: "At least {required_gb} GB RAM is required."
+    supportMessage: "RAM check failed. Detected: {detected_gb} GB. Required: {required_gb} GB."
+    severity: "Error"
+    retryable: false
+    category: "Validation"
+
+  - code: "ERP-INST-PRE-0006"
+    title: "RAM below recommended"
+    userMessage: "{recommended_gb} GB RAM is recommended for optimal performance."
+    supportMessage: "RAM: {detected_gb} GB. Recommended: {recommended_gb} GB."
+    severity: "Warning"
+    retryable: false
+    category: "Validation"
+
+  - code: "ERP-INST-PRE-0007"
+    title: "Port in use"
+    userMessage: "Port {port} is in use by another application. Please free it or configure an alternate port."
+    supportMessage: "Port {port} is occupied by PID {pid} ({process_name})."
+    severity: "Error"
+    retryable: false
+    category: "Validation"
+
+  - code: "ERP-INST-PRE-0010"
+    title: "Administrator privileges required"
+    userMessage: "Administrator privileges are required for installation."
+    supportMessage: "Process is not elevated. UAC elevation required."
+    severity: "Error"
+    retryable: false
+    category: "Validation"
+
+  - code: "ERP-INST-PRE-0011"
+    title: "Pending Windows reboot"
+    userMessage: "A Windows reboot is pending. Recommended to reboot before installing."
+    supportMessage: "Pending reboot detected via registry key."
+    severity: "Warning"
+    retryable: true
+    category: "Validation"
+
+  - code: "ERP-INST-PRE-0012"
+    title: "AV exclusions not configured"
+    userMessage: "Antivirus exclusions not detected. Performance may be affected."
+    supportMessage: "Expected AV exclusion paths not found in Windows Defender configuration."
+    severity: "Warning"
+    retryable: false
+    category: "Validation"
+
+  - code: "ERP-INST-PRE-0013"
+    title: "Existing installation detected"
+    userMessage: "ePACS is already installed. Use upgrade or repair mode."
+    supportMessage: "Existing installation found at {install_path}. Version: {version}."
+    severity: "Error"
+    retryable: false
+    category: "Validation"
+
+  - code: "ERP-INST-PRE-0015"
+    title: "Site config signature invalid"
+    userMessage: "Site configuration pack signature is invalid. Please request a new copy."
+    supportMessage: ".epcfg signature verification failed. File: {file_path}."
+    severity: "Error"
+    retryable: false
+    category: "DataIntegrity"
+
+  - code: "ERP-INST-PRE-0018"
+    title: "Another installer running"
+    userMessage: "Another installer is already running. Please wait for it to complete."
+    supportMessage: "Named mutex Global\\ePACSInstaller held by PID {pid}."
+    severity: "Error"
+    retryable: true
+    category: "Conflict"
+
+  - code: "ERP-INST-PRE-0019"
+    title: "Installation media corrupted"
+    userMessage: "Installation media may be damaged. Please request a new copy from your district office."
+    supportMessage: "SHA-256 mismatch. Expected: {expected_hash}. Actual: {actual_hash}."
+    severity: "Critical"
+    retryable: true
+    category: "DataIntegrity"
+
+  # ═══════════════════════════════════════════════════════════════
+  # INSTALL ERRORS (ERP-INST-INS-0001 to ERP-INST-INS-0099)
+  # ═══════════════════════════════════════════════════════════════
+  - code: "ERP-INST-INS-0001"
+    title: "Service registration failed"
+    userMessage: "Could not register the {service_name} service. Please contact support."
+    supportMessage: "sc.exe create failed for {service_name}. Exit code: {exit_code}. Error: {error}."
+    severity: "Error"
+    retryable: true
+    category: "System"
+
+  - code: "ERP-INST-INS-0002"
+    title: "Service start failed"
+    userMessage: "The {service_name} service could not start. Please contact support."
+    supportMessage: "Service {service_name} failed to start within {timeout_seconds}s. Last error: {error}."
+    severity: "Error"
+    retryable: true
+    category: "Dependency"
+
+  - code: "ERP-INST-INS-0003"
+    title: "Data root creation failed"
+    userMessage: "Could not create the data directory. Please check disk permissions."
+    supportMessage: "Failed to create directory {path}. Error: {error}."
+    severity: "Error"
+    retryable: false
+    category: "System"
+
+  - code: "ERP-INST-INS-0004"
+    title: "ACL application failed"
+    userMessage: "Could not set security permissions. Please contact support."
+    supportMessage: "Failed to apply ACL on {path} for account {account}. Error: {error}."
+    severity: "Error"
+    retryable: true
+    category: "System"
+
+  - code: "ERP-INST-INS-0005"
+    title: "Payload extraction failed"
+    userMessage: "Could not extract installation files. Please verify the installation media."
+    supportMessage: "Extraction failed for payload {payload_name}. File: {file}. Error: {error}."
+    severity: "Error"
+    retryable: true
+    category: "DataIntegrity"
+
+  - code: "ERP-INST-INS-0006"
+    title: "Config generation failed"
+    userMessage: "Could not generate configuration files. Please contact support."
+    supportMessage: "Template processing failed for {template}. Missing token: {token}. Error: {error}."
+    severity: "Error"
+    retryable: false
+    category: "System"
+
+  # ═══════════════════════════════════════════════════════════════
+  # MIGRATION ERRORS (ERP-INST-MIG-0001 to ERP-INST-MIG-0099)
+  # ═══════════════════════════════════════════════════════════════
+  - code: "ERP-INST-MIG-0001"
+    title: "Schema migration failed"
+    userMessage: "Database upgrade could not complete. Your data is safe — the previous version is still active."
+    supportMessage: "DbUp script {script_name} failed at checkpoint {checkpoint}. Error: {error}."
+    severity: "Critical"
+    retryable: false
+    category: "DataIntegrity"
+
+  - code: "ERP-INST-MIG-0002"
+    title: "Schema drift detected"
+    userMessage: "The database structure has been modified outside the installer. Please contact support before upgrading."
+    supportMessage: "Schema fingerprint mismatch. Expected: {expected_hash}. Actual: {actual_hash}. Drift report: {report_path}."
+    severity: "Critical"
+    retryable: false
+    category: "DataIntegrity"
+
+  - code: "ERP-INST-MIG-0003"
+    title: "MySQL Upgrade Checker failed"
+    userMessage: "Database compatibility issues detected. Upgrade cannot proceed."
+    supportMessage: "MySQL Upgrade Checker found {issue_count} critical issues. Report: {report_path}."
+    severity: "Critical"
+    retryable: false
+    category: "DataIntegrity"
+
+  # ═══════════════════════════════════════════════════════════════
+  # BACKUP/RESTORE ERRORS (ERP-INST-BAK-0001 to ERP-INST-BAK-0099)
+  # ═══════════════════════════════════════════════════════════════
+  - code: "ERP-INST-BAK-0001"
+    title: "Backup target unavailable"
+    userMessage: "Cannot write backup to the configured location. Please check the backup drive."
+    supportMessage: "Backup target {target_path} is not writable. Error: {error}."
+    severity: "Error"
+    retryable: true
+    category: "Dependency"
+
+  - code: "ERP-INST-BAK-0002"
+    title: "Backup target insufficient space"
+    userMessage: "Not enough space on backup drive. Please free space or use a different drive."
+    supportMessage: "Target {target_path} has {free_gb} GB free. Required: {required_gb} GB."
+    severity: "Error"
+    retryable: false
+    category: "Validation"
+
+  - code: "ERP-INST-BAK-0003"
+    title: "Backup verification failed"
+    userMessage: "Backup could not be verified. The backup file may be incomplete."
+    supportMessage: "Backup manifest verification failed. Checksum mismatch for {file}."
+    severity: "Critical"
+    retryable: true
+    category: "DataIntegrity"
+
+  # ═══════════════════════════════════════════════════════════════
+  # SYNC ERRORS (ERP-INST-SYN-0001 to ERP-INST-SYN-0099)
+  # ═══════════════════════════════════════════════════════════════
+  - code: "ERP-INST-SYN-0001"
+    title: "NLDR connectivity lost"
+    userMessage: "Connection to central server is unavailable. Local operations continue normally."
+    supportMessage: "NLDR endpoint {endpoint} unreachable. Circuit breaker OPEN. Last success: {last_success}."
+    severity: "Warning"
+    retryable: true
+    category: "Integration"
+
+  - code: "ERP-INST-SYN-0002"
+    title: "Sync chunk upload failed"
+    userMessage: "Data synchronization interrupted. Will retry automatically when connection is restored."
+    supportMessage: "Chunk upload failed. Chunk: {chunk_id}. Attempt: {attempt}/{max_attempts}. Error: {error}."
+    severity: "Warning"
+    retryable: true
+    category: "Integration"
+
+  # ═══════════════════════════════════════════════════════════════
+  # HEALTH ERRORS (ERP-INST-HLT-0001 to ERP-INST-HLT-0099)
+  # ═══════════════════════════════════════════════════════════════
+  - code: "ERP-INST-HLT-0001"
+    title: "Service health check failed"
+    userMessage: "The {service_name} service is not responding. Automatic restart in progress."
+    supportMessage: "Health check failed for {service_name}. Consecutive failures: {failure_count}. Error: {error}."
+    severity: "Error"
+    retryable: true
+    category: "Dependency"
+
+  - code: "ERP-INST-HLT-0002"
+    title: "Disk space critical"
+    userMessage: "Data drive is almost full. Please free space immediately."
+    supportMessage: "Data volume {volume} at {used_percent}% capacity. Free: {free_gb} GB."
+    severity: "Critical"
+    retryable: false
+    category: "System"
+
+  - code: "ERP-INST-HLT-0003"
+    title: "Configuration drift detected"
+    userMessage: "Configuration files have been modified. Please use the installer for configuration changes."
+    supportMessage: "Drift detected in {file_path}. Expected hash: {expected}. Actual: {actual}."
+    severity: "Warning"
+    retryable: false
+    category: "DataIntegrity"
+
+  - code: "ERP-INST-HLT-0004"
+    title: "Clock drift detected"
+    userMessage: "System clock may be inaccurate. Please check the date and time settings."
+    supportMessage: "Clock drift: {drift_seconds}s. Threshold: {threshold_seconds}s. Sync blocked: {sync_blocked}."
+    severity: "Warning"
+    retryable: false
+    category: "System"
+
+  - code: "ERP-INST-HLT-0005"
+    title: "Certificate expiring soon"
+    userMessage: "A security certificate will expire in {days_remaining} days. Please contact support."
+    supportMessage: "Certificate {thumbprint} ({subject}) expires on {expiry_date}. Days remaining: {days_remaining}."
+    severity: "Warning"
+    retryable: false
+    category: "System"

@@ -1,0 +1,14 @@
+root = true
+
+[*.cs]
+# Suppress CA1848 (LoggerMessage delegates) — we use IAppLogger<T> from Observability package
+# which wraps ILogger with structured templates. This rule is not applicable.
+dotnet_diagnostic.CA1848.severity = none
+
+# Suppress CA1727 (PascalCase placeholders) — our logging templates use PascalCase
+# but the analyzer sometimes flags valid patterns.
+dotnet_diagnostic.CA1727.severity = suggestion
+
+[tests/**/*.cs]
+# Allow underscores in test method names (MethodName_Scenario_ExpectedResult convention)
+dotnet_diagnostic.CA1707.severity = none

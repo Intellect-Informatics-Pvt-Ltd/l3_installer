@@ -1,0 +1,55 @@
+{
+  "signature": "BASE64_ENCODED_SIGNATURE_PLACEHOLDER",
+  "schema_version": 1,
+  "pacs_id": "AP-XYZ-0001",
+  "state_code": "AP",
+  "district_code": "GUNTUR",
+  "language": "en",
+  "data_root": "D:\\ePACSData",
+  "binary_root": "C:\\Program Files\\ePACS",
+  "nldr_endpoint": "https://nldr.epacs.gov.in",
+  "nldr_client_cert_thumbprint": "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4E5F6A1B2",
+  "backup_targets": [
+    "D:\\ePACSBackups",
+    "E:\\USBBackup"
+  ],
+  "backup_schedule": {
+    "daily": "02:00",
+    "weekly_day": "Sunday",
+    "weekly_time": "03:00"
+  },
+  "log_retention_days": {
+    "application": 30,
+    "audit": 90,
+    "mysql": 7
+  },
+  "attachment_quota_gb": 50,
+  "site_coordinates": {
+    "latitude": 16.5062,
+    "longitude": 80.6480,
+    "accuracy_meters": 50,
+    "source": "GPS survey during site registration"
+  },
+  "monitoring": {
+    "health_poll_interval_seconds": 60,
+    "disk_check_interval_seconds": 900,
+    "drift_check_interval_seconds": 3600,
+    "cert_expiry_check_interval_seconds": 21600,
+    "clock_drift_check_interval_seconds": 1800
+  },
+  "services": {
+    "mysql_port": 3306,
+    "cache_port": 6379,
+    "eventing_port": 9092,
+    "web_https_port": 443
+  },
+  "traceability": {
+    "anomaly_rules": {
+      "AN-01_impossible_travel": { "mode": "Disabled" },
+      "AN-04_maker_checker": { "mode": "Active", "severity": "Critical" },
+      "AN-05_out_of_hours": { "mode": "Active", "business_hours_start": "07:00", "business_hours_end": "20:00" },
+      "AN-07_volume_spike": { "mode": "Active", "baseline_seed_days": 30, "spike_threshold_sigma": 3.0 }
+    }
+  },
+  "override_token": null
+}

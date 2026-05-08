@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel\SharedKernel.csproj" />
+    <ProjectReference Include="..\Installer.Core\Installer.Core.csproj" />
+    <ProjectReference Include="..\Installer.Actions\Installer.Actions.csproj" />
+    <ProjectReference Include="..\ManifestVerifier\ManifestVerifier.csproj" />
+    <ProjectReference Include="..\SupportBundle\SupportBundle.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

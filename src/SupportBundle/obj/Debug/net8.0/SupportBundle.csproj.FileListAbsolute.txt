@@ -1,0 +1,16 @@
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/bin/Debug/net8.0/SupportBundle.deps.json
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/bin/Debug/net8.0/SupportBundle.dll
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/bin/Debug/net8.0/SupportBundle.pdb
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/obj/Debug/net8.0/SupportBundle.GeneratedMSBuildEditorConfig.editorconfig
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/obj/Debug/net8.0/SupportBundle.AssemblyInfoInputs.cache
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/obj/Debug/net8.0/SupportBundle.AssemblyInfo.cs
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/obj/Debug/net8.0/SupportBundle.csproj.CoreCompileInputs.cache
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/obj/Debug/net8.0/SupportBundle.sourcelink.json
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/obj/Debug/net8.0/SupportBundle.dll
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/obj/Debug/net8.0/refint/SupportBundle.dll
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/obj/Debug/net8.0/SupportBundle.pdb
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/obj/Debug/net8.0/ref/SupportBundle.dll
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/obj/Debug/net8.0/SupportBundle.csproj.AssemblyReference.cache
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/bin/Debug/net8.0/SharedKernel.dll
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/bin/Debug/net8.0/SharedKernel.pdb
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/obj/Debug/net8.0/SupportBundle.csproj.CopyComplete

@@ -1,0 +1,45 @@
+errors:
+  - code: "ERP-CORE-SYS-0001"
+    title: "Unhandled system error"
+    userMessage: "An unexpected error occurred. Please try again later."
+    supportMessage: "Unhandled exception — check logs for correlation ID."
+    httpStatus: 500
+    severity: "Error"
+    retryable: false
+    category: "System"
+
+  - code: "ERP-CORE-SYS-0002"
+    title: "Service unavailable"
+    userMessage: "The service is temporarily unavailable. Please try again shortly."
+    supportMessage: "Downstream dependency is unreachable — check health endpoints."
+    httpStatus: 503
+    severity: "Error"
+    retryable: true
+    category: "Dependency"
+
+  - code: "ERP-CORE-SYS-0003"
+    title: "Request timeout"
+    userMessage: "The request took too long to process. Please try again."
+    supportMessage: "Request exceeded configured timeout threshold."
+    httpStatus: 504
+    severity: "Warning"
+    retryable: true
+    category: "System"
+
+  - code: "ERP-CORE-SYS-0004"
+    title: "Configuration error"
+    userMessage: "A system configuration error occurred. Please contact support."
+    supportMessage: "Missing or invalid configuration — review appsettings and environment variables."
+    httpStatus: 500
+    severity: "Critical"
+    retryable: false
+    category: "System"
+
+  - code: "ERP-CORE-VAL-0001"
+    title: "Validation failed"
+    userMessage: "One or more input fields are invalid. Please correct and retry."
+    supportMessage: "Request payload failed validation — see fieldErrors for details."
+    httpStatus: 400
+    severity: "Warning"
+    retryable: false
+    category: "Validation"

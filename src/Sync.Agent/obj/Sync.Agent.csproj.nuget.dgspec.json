@@ -1,0 +1,197 @@
+{
+  "format": 1,
+  "restore": {
+    "/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Sync.Agent/Sync.Agent.csproj": {}
+  },
+  "projects": {
+    "/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SharedKernel/SharedKernel.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SharedKernel/SharedKernel.csproj",
+        "projectName": "SharedKernel",
+        "projectPath": "/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SharedKernel/SharedKernel.csproj",
+        "packagesPath": "/Users/narayanaa/.nuget/packages/",
+        "outputPath": "/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SharedKernel/obj/",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "/Users/narayanaa/.nuget/NuGet/NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "allWarningsAsErrors": true,
+          "warnAsError": [
+            "NU1605"
+          ]
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "dependencies": {
+            "Microsoft.Extensions.Logging.Abstractions": {
+              "target": "Package",
+              "version": "[8.0.2, )"
+            },
+            "Microsoft.Extensions.Options": {
+              "target": "Package",
+              "version": "[8.0.2, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "/usr/local/share/dotnet/sdk/8.0.101/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Sync.Abstractions/Sync.Abstractions.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Sync.Abstractions/Sync.Abstractions.csproj",
+        "projectName": "Sync.Abstractions",
+        "projectPath": "/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Sync.Abstractions/Sync.Abstractions.csproj",
+        "packagesPath": "/Users/narayanaa/.nuget/packages/",
+        "outputPath": "/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Sync.Abstractions/obj/",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "/Users/narayanaa/.nuget/NuGet/NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "allWarningsAsErrors": true,
+          "warnAsError": [
+            "NU1605"
+          ]
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "/usr/local/share/dotnet/sdk/8.0.101/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Sync.Agent/Sync.Agent.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Sync.Agent/Sync.Agent.csproj",
+        "projectName": "Sync.Agent",
+        "projectPath": "/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Sync.Agent/Sync.Agent.csproj",
+        "packagesPath": "/Users/narayanaa/.nuget/packages/",
+        "outputPath": "/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Sync.Agent/obj/",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "/Users/narayanaa/.nuget/NuGet/NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SharedKernel/SharedKernel.csproj": {
+                "projectPath": "/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SharedKernel/SharedKernel.csproj"
+              },
+              "/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Sync.Abstractions/Sync.Abstractions.csproj": {
+                "projectPath": "/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Sync.Abstractions/Sync.Abstractions.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "allWarningsAsErrors": true,
+          "warnAsError": [
+            "NU1605"
+          ]
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "dependencies": {
+            "Microsoft.Extensions.Hosting": {
+              "target": "Package",
+              "version": "[8.0.0, )"
+            },
+            "Microsoft.Extensions.Http": {
+              "target": "Package",
+              "version": "[8.0.1, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "/usr/local/share/dotnet/sdk/8.0.101/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}

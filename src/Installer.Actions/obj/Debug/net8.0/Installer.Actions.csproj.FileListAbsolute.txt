@@ -1,0 +1,16 @@
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.Actions/bin/Debug/net8.0/Installer.Actions.deps.json
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.Actions/bin/Debug/net8.0/Installer.Actions.dll
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.Actions/bin/Debug/net8.0/Installer.Actions.pdb
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.Actions/obj/Debug/net8.0/Installer.Actions.GeneratedMSBuildEditorConfig.editorconfig
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.Actions/obj/Debug/net8.0/Installer.Actions.AssemblyInfoInputs.cache
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.Actions/obj/Debug/net8.0/Installer.Actions.AssemblyInfo.cs
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.Actions/obj/Debug/net8.0/Installer.Actions.csproj.CoreCompileInputs.cache
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.Actions/obj/Debug/net8.0/Installer.Actions.sourcelink.json
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.Actions/obj/Debug/net8.0/Installer.Actions.dll
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.Actions/obj/Debug/net8.0/refint/Installer.Actions.dll
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.Actions/obj/Debug/net8.0/Installer.Actions.pdb
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.Actions/obj/Debug/net8.0/ref/Installer.Actions.dll
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.Actions/bin/Debug/net8.0/SharedKernel.dll
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.Actions/bin/Debug/net8.0/SharedKernel.pdb
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.Actions/obj/Debug/net8.0/Installer.Actions.csproj.AssemblyReference.cache
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/Installer.Actions/obj/Debug/net8.0/Installer.Actions.csproj.CopyComplete

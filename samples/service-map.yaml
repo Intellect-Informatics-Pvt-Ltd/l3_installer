@@ -1,0 +1,136 @@
+# ePACS Service Map — Defines all Windows services, their ordering, health checks, and recovery actions.
+# The installer reads this file to register, start, stop, and monitor services.
+# All values are configurable — this file is the single source of truth for service topology.
+
+services:
+  - name: "ePACSMySQL"
+    display_name: "ePACS MySQL"
+    description: "MySQL 8.4 LTS database server for ePACS"
+    executable: "${BinaryRoot}\\current\\mysql\\bin\\mysqld.exe"
+    arguments: "--defaults-file=${DataRoot}\\mysql\\my.ini"
+    account: "ePACSDbSvc"
+    start_order: 10
+    stop_order: 90
+    startup_type: "Automatic"
+    health_check:
+      type: "command"
+      command: "${BinaryRoot}\\current\\mysql\\bin\\mysqladmin.exe"
+      arguments: "ping --host=127.0.0.1 --port=${Services:MySql:Port} --user=healthcheck"
+      timeout_seconds: 10
+      success_exit_code: 0
+    recovery:
+      first_failure: { action: "restart", delay_seconds: 60 }
+      second_failure: { action: "restart", delay_seconds: 120 }
+      subsequent: { action: "restart_and_bundle", delay_seconds: 300 }
+      reset_after_seconds: 86400
+    data_directories:
+      - "${DataRoot}\\mysql\\data"
+      - "${DataRoot}\\mysql\\logs"
+
+  - name: "ePACSCache"
+    display_name: "ePACS Cache"
+    description: "Microsoft Garnet cache service for ePACS"
+    executable: "${BinaryRoot}\\current\\garnet\\GarnetServer.exe"
+    arguments: "--config ${DataRoot}\\config\\garnet.conf"
+    account: "ePACSCacheSvc"
+    start_order: 20
+    stop_order: 80
+    startup_type: "Automatic"
+    health_check:
+      type: "tcp"
+      host: "127.0.0.1"
+      port: "${Services:Cache:Port}"
+      timeout_seconds: 5
+    recovery:
+      first_failure: { action: "restart", delay_seconds: 30 }
+      second_failure: { action: "restart", delay_seconds: 60 }
+      subsequent: { action: "restart_and_bundle", delay_seconds: 120 }
+      reset_after_seconds: 86400
+    data_directories:
+      - "${DataRoot}\\cache"
+
+  - name: "ePACSEventing"
+    display_name: "ePACS Eventing"
+    description: "Apache Kafka KRaft single-node eventing for ePACS"
+    executable: "${BinaryRoot}\\current\\jre\\bin\\java.exe"
+    arguments: "-Xmx512m -Xms256m -cp ${BinaryRoot}\\current\\kafka\\libs\\* kafka.Kafka ${DataRoot}\\config\\kafka.properties"
+    account: "ePACSEventSvc"
+    start_order: 30
+    stop_order: 70
+    startup_type: "Automatic"
+    health_check:
+      type: "tcp"
+      host: "127.0.0.1"
+      port: "${Services:Eventing:Port}"
+      timeout_seconds: 10
+    recovery:
+      first_failure: { action: "restart", delay_seconds: 60 }
+      second_failure: { action: "restart", delay_seconds: 120 }
+      subsequent: { action: "restart_and_bundle", delay_seconds: 300 }
+      reset_after_seconds: 86400
+    data_directories:
+      - "${DataRoot}\\eventing\\data"
+      - "${DataRoot}\\eventing\\logs"
+
+  - name: "ePACSWeb"
+    display_name: "ePACS Web"
+    description: "ePACS Kestrel web host (HTTPS)"
+    executable: "${BinaryRoot}\\current\\services\\ePacs.Web.exe"
+    arguments: "--urls https://0.0.0.0:${Services:Web:HttpsPort}"
+    account: "ePACSAppSvc"
+    start_order: 50
+    stop_order: 50
+    startup_type: "Automatic"
+    health_check:
+      type: "http"
+      url: "https://127.0.0.1:${Services:Web:HttpsPort}/health/live"
+      timeout_seconds: 10
+      expected_status: 200
+    recovery:
+      first_failure: { action: "restart", delay_seconds: 30 }
+      second_failure: { action: "restart", delay_seconds: 60 }
+      subsequent: { action: "restart_and_bundle", delay_seconds: 120 }
+      reset_after_seconds: 86400
+    data_directories: []
+
+  - name: "ePACSSync"
+    display_name: "ePACS Sync Agent"
+    description: "Outbox-to-NLDR synchronization agent"
+    executable: "${BinaryRoot}\\current\\services\\ePacs.Sync.exe"
+    arguments: ""
+    account: "ePACSSyncSvc"
+    start_order: 60
+    stop_order: 40
+    startup_type: "Automatic"
+    health_check:
+      type: "http"
+      url: "http://127.0.0.1:5080/health/live"
+      timeout_seconds: 10
+      expected_status: 200
+    recovery:
+      first_failure: { action: "restart", delay_seconds: 60 }
+      second_failure: { action: "restart", delay_seconds: 120 }
+      subsequent: { action: "restart_and_bundle", delay_seconds: 300 }
+      reset_after_seconds: 86400
+    data_directories: []
+
+  - name: "ePACSInstallerAgent"
+    display_name: "ePACS Installer Agent"
+    description: "Always-on health monitoring, backup scheduling, and operational automation"
+    executable: "${BinaryRoot}\\current\\services\\Installer.Agent.exe"
+    arguments: ""
+    account: "LocalSystem"
+    start_order: 70
+    stop_order: 10
+    startup_type: "Automatic"
+    health_check:
+      type: "http"
+      url: "http://127.0.0.1:5090/health/live"
+      timeout_seconds: 5
+      expected_status: 200
+    recovery:
+      first_failure: { action: "restart", delay_seconds: 10 }
+      second_failure: { action: "restart", delay_seconds: 30 }
+      subsequent: { action: "restart", delay_seconds: 60 }
+      reset_after_seconds: 86400
+    data_directories: []

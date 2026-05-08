@@ -1,0 +1,13 @@
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SharedKernel/bin/Debug/net8.0/SharedKernel.deps.json
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SharedKernel/bin/Debug/net8.0/SharedKernel.dll
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SharedKernel/bin/Debug/net8.0/SharedKernel.pdb
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SharedKernel/obj/Debug/net8.0/SharedKernel.GeneratedMSBuildEditorConfig.editorconfig
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SharedKernel/obj/Debug/net8.0/SharedKernel.AssemblyInfoInputs.cache
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SharedKernel/obj/Debug/net8.0/SharedKernel.AssemblyInfo.cs
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SharedKernel/obj/Debug/net8.0/SharedKernel.csproj.CoreCompileInputs.cache
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SharedKernel/obj/Debug/net8.0/SharedKernel.sourcelink.json
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SharedKernel/obj/Debug/net8.0/SharedKernel.dll
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SharedKernel/obj/Debug/net8.0/refint/SharedKernel.dll
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SharedKernel/obj/Debug/net8.0/SharedKernel.pdb
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SharedKernel/obj/Debug/net8.0/ref/SharedKernel.dll
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SharedKernel/obj/Debug/net8.0/SharedKernel.csproj.AssemblyReference.cache

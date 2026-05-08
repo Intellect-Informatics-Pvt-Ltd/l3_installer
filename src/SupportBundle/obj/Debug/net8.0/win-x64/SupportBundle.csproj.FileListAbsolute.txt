@@ -1,0 +1,12 @@
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/bin/Debug/net8.0/win-x64/SupportBundle.deps.json
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/bin/Debug/net8.0/win-x64/SupportBundle.dll
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/bin/Debug/net8.0/win-x64/SupportBundle.pdb
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/obj/Debug/net8.0/win-x64/SupportBundle.GeneratedMSBuildEditorConfig.editorconfig
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/obj/Debug/net8.0/win-x64/SupportBundle.AssemblyInfoInputs.cache
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/obj/Debug/net8.0/win-x64/SupportBundle.AssemblyInfo.cs
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/obj/Debug/net8.0/win-x64/SupportBundle.csproj.CoreCompileInputs.cache
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/obj/Debug/net8.0/win-x64/SupportBundle.sourcelink.json
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/obj/Debug/net8.0/win-x64/SupportBundle.dll
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/obj/Debug/net8.0/win-x64/refint/SupportBundle.dll
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/obj/Debug/net8.0/win-x64/SupportBundle.pdb
+/Users/narayanaa/DevCode/Intellect/Code/RCA/l3_installer/src/SupportBundle/obj/Debug/net8.0/win-x64/ref/SupportBundle.dll
