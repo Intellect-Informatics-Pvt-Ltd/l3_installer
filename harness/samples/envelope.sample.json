@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "1.0",
+  "eventId": "7f8a3c21-e9b4-4d1f-a6b8-0c4e5d9f2a1b",
+  "correlationId": "01J3XKPZT8N4V2FQM7R9ESHWDY",
+  "causationId": "01J3XKPYT7M3U1EPL6Q8DRVWCX",
+  "pacsId": "PACS-AP-0001",
+  "sourceSystem": "PACS",
+  "targetSystem": "NLDR",
+  "sequenceNo": 1042,
+  "streamName": "pacs.outbound",
+  "idempotencyKey": "PACS-AP-0001:voucher:21150000000042:INSERT:2026-05-14T10:00:00Z",
+  "changeType": "INSERT",
+  "entityType": "voucher",
+  "entityId": "21150000000042",
+  "payload": {
+    "after": {
+      "voucherId": 21150000000042,
+      "pacsId": "PACS-AP-0001",
+      "voucherNo": "VCH-2026-00042",
+      "voucherDate": "2026-05-14",
+      "voucherType": "CR",
+      "narration": "Cash receipt from member deposit",
+      "totalAmount": 5000.00,
+      "status": "POSTED",
+      "createdBy": "operator01"
+    }
+  },
+  "beforeState": null,
+  "amendmentMeta": null,
+  "payloadHash": "a3f7c2e1d0b6f5a8c9e4d7b2a1f0e3c8d5b6a9f2e1c4d7a0b3f6e9c2d5a8b1",
+  "createdAtUtc": "2026-05-14T10:00:00.000000Z"
+}

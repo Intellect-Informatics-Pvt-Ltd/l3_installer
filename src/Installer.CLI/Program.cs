@@ -4,7 +4,7 @@ namespace Installer.CLI;
 
 /// <summary>
 /// ePACS Installer CLI — Silent/unattended mode entry point.
-/// Usage: Installer.CLI.exe /quiet /config:&lt;path-to-epcfg&gt; [/mode:install|upgrade|repair|uninstall]
+/// Usage: Installer.CLI.exe /quiet /config:&lt;path-to-epcfg&gt; [/mode:install|upgrade|repair|uninstall] [/demo]
 ///
 /// Exit codes:
 ///   0 = Success
@@ -27,7 +27,7 @@ public static class Program
 
         try
         {
-            Console.WriteLine($"ePACS Installer CLI — Mode: {options.Mode}, Quiet: {options.Quiet}");
+            Console.WriteLine($"ePACS Installer CLI — Mode: {options.Mode}, Quiet: {options.Quiet}, Demo: {options.Demo}");
 
             if (options.ConfigPath is not null)
             {
@@ -39,6 +39,11 @@ public static class Program
             if (options.Mode == InstallerMode.Install)
             {
                 Console.WriteLine("Fresh install mode selected.");
+
+                if (options.Demo)
+                {
+                    Console.WriteLine("Demo mode: NLDR-side harness services will also be installed.");
+                }
             }
 
             await Task.CompletedTask; // Placeholder for async pipeline
@@ -107,6 +112,19 @@ public static class Program
             {
                 options.ShowHelp = true;
             }
+            else if (arg.Equals("/demo", StringComparison.OrdinalIgnoreCase) ||
+                     arg.Equals("--demo", StringComparison.OrdinalIgnoreCase))
+            {
+                options.Demo = true;
+            }
+            else if (arg.StartsWith("/harness-service-map:", StringComparison.OrdinalIgnoreCase))
+            {
+                options.HarnessServiceMapPath = arg[21..];
+            }
+            else if (arg.StartsWith("--harness-service-map=", StringComparison.OrdinalIgnoreCase))
+            {
+                options.HarnessServiceMapPath = arg[22..];
+            }
         }
 
         return options;
@@ -132,10 +150,12 @@ public static class Program
               Installer.CLI.exe [options]
             
             Options:
-              /quiet              Run in silent mode (no console output)
-              /config:<path>      Path to site configuration pack (.epcfg)
-              /mode:<mode>        Operation mode: install, upgrade, repair, uninstall, backup, restore
-              /help               Show this help message
+              /quiet                       Run in silent mode (no console output)
+              /config:<path>               Path to site configuration pack (.epcfg)
+              /mode:<mode>                 Operation mode: install, upgrade, repair, uninstall, backup, restore
+              /demo                        Install NLDR-side harness services too (single-machine demo)
+              /harness-service-map:<path>  Path to harness service-map.yaml (default: bundled)
+              /help                        Show this help message
             
             Exit Codes:
               0   Success
@@ -146,6 +166,7 @@ public static class Program
             
             Examples:
               Installer.CLI.exe /quiet /config:D:\site-config.epcfg /mode:install
+              Installer.CLI.exe /quiet /config:D:\site-config.epcfg /mode:install /demo
               Installer.CLI.exe /mode:upgrade
               Installer.CLI.exe /mode:backup
             """);
@@ -158,6 +179,8 @@ internal sealed class CliOptions
     public string? ConfigPath { get; set; }
     public InstallerMode Mode { get; set; } = InstallerMode.Install;
     public bool ShowHelp { get; set; }
+    public bool Demo { get; set; }
+    public string? HarnessServiceMapPath { get; set; }
 }
 
 internal static class ExitCodes

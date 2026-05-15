@@ -1,0 +1,189 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Full harness: infra + all 7 .NET services.
+# Usage:
+#   docker compose -f docker/docker-compose.yml up -d --build
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Infrastructure (inherited from minimal) ───────────────────────────────
+  kafka:
+    image: bitnami/kafka:3.7
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_CFG_NODE_ID: "1"
+      KAFKA_CFG_PROCESS_ROLES: "broker,controller"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    volumes:
+      - kafka-data:/bitnami/kafka
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  pacs-mysql:
+    image: mysql:8.4
+    ports:
+      - "3307:3306"
+    env_file: env/pacs.env
+    environment:
+      MYSQL_DATABASE: epacs_pacs
+    volumes:
+      - pacs-mysql-data:/var/lib/mysql
+      - ../db/mysql/pacs:/docker-entrypoint-initdb.d:ro
+    command: >
+      --innodb_flush_log_at_trx_commit=1
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      retries: 10
+
+  nldr-mysql:
+    image: mysql:8.4
+    ports:
+      - "3308:3306"
+    env_file: env/nldr.env
+    environment:
+      MYSQL_DATABASE: epacs_nldr
+    volumes:
+      - nldr-mysql-data:/var/lib/mysql
+      - ../db/mysql/nldr:/docker-entrypoint-initdb.d:ro
+    command: >
+      --innodb_flush_log_at_trx_commit=1
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      retries: 10
+
+  pacs-redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 5
+
+  nldr-redis:
+    image: redis:7-alpine
+    ports:
+      - "6381:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 5
+
+  # ── PACS .NET services ────────────────────────────────────────────────────
+  pacs-fas-api:
+    build:
+      context: ..
+      dockerfile: src/Pacs.Fas.Api/Dockerfile
+    ports:
+      - "5101:8080"
+    env_file: env/pacs.env
+    environment:
+      ASPNETCORE_ENVIRONMENT: Docker
+    depends_on:
+      pacs-mysql: { condition: service_healthy }
+      pacs-redis: { condition: service_healthy }
+      kafka:      { condition: service_healthy }
+
+  pacs-loans-api:
+    build:
+      context: ..
+      dockerfile: src/Pacs.Loans.Api/Dockerfile
+    ports:
+      - "5102:8080"
+    env_file: env/pacs.env
+    environment:
+      ASPNETCORE_ENVIRONMENT: Docker
+    depends_on:
+      pacs-mysql: { condition: service_healthy }
+      pacs-redis: { condition: service_healthy }
+      kafka:      { condition: service_healthy }
+
+  pacs-sync:
+    build:
+      context: ..
+      dockerfile: src/Pacs.SyncWorker/Dockerfile
+    env_file: env/pacs.env
+    environment:
+      DOTNET_ENVIRONMENT: Docker
+    depends_on:
+      pacs-mysql:    { condition: service_healthy }
+      pacs-redis:    { condition: service_healthy }
+      kafka:         { condition: service_healthy }
+      nldr-api:      { condition: service_started }
+
+  pacs-operator-ui:
+    build:
+      context: ..
+      dockerfile: src/Pacs.OperatorUi/Dockerfile
+    ports:
+      - "5301:8080"
+    env_file: env/pacs.env
+    environment:
+      ASPNETCORE_ENVIRONMENT: Docker
+    depends_on:
+      pacs-fas-api:   { condition: service_started }
+      pacs-loans-api: { condition: service_started }
+      pacs-redis:     { condition: service_healthy }
+
+  # ── NLDR .NET services ────────────────────────────────────────────────────
+  nldr-api:
+    build:
+      context: ..
+      dockerfile: src/Nldr.Api/Dockerfile
+    ports:
+      - "5201:8080"
+    env_file: env/nldr.env
+    environment:
+      ASPNETCORE_ENVIRONMENT: Docker
+    depends_on:
+      nldr-mysql: { condition: service_healthy }
+      nldr-redis: { condition: service_healthy }
+      kafka:      { condition: service_healthy }
+
+  nldr-sync:
+    build:
+      context: ..
+      dockerfile: src/Nldr.SyncWorker/Dockerfile
+    env_file: env/nldr.env
+    environment:
+      DOTNET_ENVIRONMENT: Docker
+    depends_on:
+      nldr-mysql: { condition: service_healthy }
+      nldr-redis: { condition: service_healthy }
+      kafka:      { condition: service_healthy }
+
+  nldr-dashboard-ui:
+    build:
+      context: ..
+      dockerfile: src/Nldr.DashboardUi/Dockerfile
+    ports:
+      - "5401:8080"
+    env_file: env/nldr.env
+    environment:
+      ASPNETCORE_ENVIRONMENT: Docker
+    depends_on:
+      nldr-api: { condition: service_started }
+      nldr-redis: { condition: service_healthy }
+
+volumes:
+  kafka-data:
+  pacs-mysql-data:
+  nldr-mysql-data:

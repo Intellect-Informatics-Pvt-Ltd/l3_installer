@@ -1,0 +1,137 @@
+# ePACS Sync Test Harness — Error Catalog
+# Format mirrors packaging/error-catalog/*.yaml in the installer project.
+# All codes are consumed via IErrorFactory.FromCatalog(code, contextMessage).
+
+errors:
+  # ── PACS Validation ──────────────────────────────────────────────────────────
+  ERP-PACS-VAL-0001:
+    http: 400
+    category: VAL
+    operator: "Required field missing in request body."
+    severity: Warning
+    retryable: false
+
+  ERP-PACS-VAL-0007:
+    http: 422
+    category: VAL
+    operator: "Before-state could not be captured for the delete operation."
+    severity: Error
+    retryable: false
+
+  ERP-PACS-VAL-0008:
+    http: 422
+    category: VAL
+    operator: "Amendment requires a non-empty reason and an approver who is a different user than the current user."
+    severity: Error
+    retryable: false
+
+  ERP-PACS-VAL-0009:
+    http: 400
+    category: VAL
+    operator: "Uploaded file exceeds the maximum allowed size."
+    severity: Warning
+    retryable: false
+
+  # ── PACS Governance ──────────────────────────────────────────────────────────
+  ERP-PACS-GOV-0001:
+    http: 409
+    category: GOV
+    operator: "Bulk delete above the threshold requires a valid backup and a governance override token."
+    severity: Error
+    retryable: false
+
+  # ── PACS Installation ────────────────────────────────────────────────────────
+  ERP-PACS-INS-0001:
+    http: 500
+    category: INS
+    operator: "Database write failed."
+    severity: Error
+    retryable: true
+
+  ERP-PACS-INS-0005:
+    http: 500
+    category: INS
+    operator: "PACS ID mismatch detected during startup — this node is configured with the wrong pacs_id."
+    severity: Critical
+    retryable: false
+
+  # ── PACS Sync ─────────────────────────────────────────────────────────────────
+  ERP-PACS-SYN-0001:
+    http: 503
+    category: SYN
+    operator: "Outbound sync paused — clock drift exceeded the blocking threshold."
+    severity: Error
+    retryable: false
+
+  # ── PACS Health ──────────────────────────────────────────────────────────────
+  ERP-PACS-HLT-0010:
+    http: 200
+    category: HLT
+    operator: "Clock drift warning — drift exceeded the warning threshold."
+    severity: Warning
+    retryable: false
+
+  # ── NLDR Validation ──────────────────────────────────────────────────────────
+  ERP-NLDR-VAL-0001:
+    http: 400
+    category: VAL
+    operator: "Inbound envelope JSON is malformed."
+    severity: Error
+    retryable: false
+
+  ERP-NLDR-VAL-0002:
+    http: 422
+    category: VAL
+    operator: "Payload hash mismatch — the envelope has been tampered with."
+    severity: Error
+    retryable: false
+
+  ERP-NLDR-VAL-0003:
+    http: 400
+    category: VAL
+    operator: "Missing eventId field in the envelope."
+    severity: Error
+    retryable: false
+
+  ERP-NLDR-VAL-0004:
+    http: 400
+    category: VAL
+    operator: "Sequence number must be a positive integer."
+    severity: Error
+    retryable: false
+
+  ERP-NLDR-VAL-0005:
+    http: 400
+    category: VAL
+    operator: "Event timestamp is beyond the allowed clock drift threshold."
+    severity: Error
+    retryable: false
+
+  ERP-NLDR-VAL-0006:
+    http: 422
+    category: VAL
+    operator: "DELETE event is missing the mandatory beforeState field."
+    severity: Error
+    retryable: false
+
+  ERP-NLDR-VAL-0007:
+    http: 422
+    category: VAL
+    operator: "AMENDMENT event is missing reason or approver in amendmentMeta."
+    severity: Error
+    retryable: false
+
+  # ── NLDR Security ─────────────────────────────────────────────────────────────
+  ERP-NLDR-SEC-0001:
+    http: 401
+    category: SEC
+    operator: "Authentication failed — invalid certificate or test token."
+    severity: Error
+    retryable: false
+
+  ERP-NLDR-SEC-0002:
+    http: 422
+    category: SEC
+    operator: "Replayed event detected with an altered payload — possible tampering."
+    severity: Error
+    retryable: false

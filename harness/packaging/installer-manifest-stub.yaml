@@ -1,0 +1,53 @@
+# ePACS Sync Test Harness — Installer Manifest Stub
+# This file is merged into the main release-manifest.yaml by CI when building
+# an installer package that includes the harness (pilot/demo deployments).
+#
+# The SHA-256 hashes are placeholder values — CI replaces them after publish.
+# See docs/adr/ADR-0007-harness-native-deployment.md for the packaging strategy.
+
+harness_payloads:
+  - name: "harness-pacs-services"
+    file: "harness-pacs-win-x64.zip"
+    sha256: "PLACEHOLDER_COMPUTED_BY_CI"
+    size_bytes: 0  # computed by CI
+    install_order: 10  # after infra (MySQL, Garnet, Kafka, JRE)
+    required: true
+    group: "pacs"
+    description: "Self-contained PACS-side harness services (Pacs.Fas.Api, Pacs.Loans.Api, Pacs.SyncWorker, Pacs.OperatorUi)"
+    contents:
+      - "Pacs.Fas.Api.exe"
+      - "Pacs.Loans.Api.exe"
+      - "Pacs.SyncWorker.exe"
+      - "Pacs.OperatorUi.exe"
+      - "appsettings.json"
+      - "appsettings.Installer.json"
+
+  - name: "harness-nldr-services"
+    file: "harness-nldr-win-x64.zip"
+    sha256: "PLACEHOLDER_COMPUTED_BY_CI"
+    size_bytes: 0  # computed by CI
+    install_order: 11
+    required: false  # only included when --demo flag is used
+    group: "nldr"
+    description: "Self-contained NLDR-side harness services (Nldr.Api, Nldr.SyncWorker, Nldr.DashboardUi)"
+    contents:
+      - "Nldr.Api.exe"
+      - "Nldr.SyncWorker.exe"
+      - "Nldr.DashboardUi.exe"
+      - "appsettings.json"
+      - "appsettings.Installer.json"
+
+# CI build script pseudocode:
+#
+#   dotnet publish harness/src/Pacs.Fas.Api -c Release -o publish/pacs/
+#   dotnet publish harness/src/Pacs.Loans.Api -c Release -o publish/pacs/
+#   dotnet publish harness/src/Pacs.SyncWorker -c Release -o publish/pacs/
+#   dotnet publish harness/src/Pacs.OperatorUi -c Release -o publish/pacs/
+#   zip harness-pacs-win-x64.zip publish/pacs/*
+#   sha256sum harness-pacs-win-x64.zip → update this manifest
+#
+#   dotnet publish harness/src/Nldr.Api -c Release -o publish/nldr/
+#   dotnet publish harness/src/Nldr.SyncWorker -c Release -o publish/nldr/
+#   dotnet publish harness/src/Nldr.DashboardUi -c Release -o publish/nldr/
+#   zip harness-nldr-win-x64.zip publish/nldr/*
+#   sha256sum harness-nldr-win-x64.zip → update this manifest

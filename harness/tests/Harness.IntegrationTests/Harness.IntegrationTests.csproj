@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- Integration tests need Docker; excluded from quick unit-test runs. -->
+    <RunSettingsFilePath>$(MSBuildProjectDirectory)\integration.runsettings</RunSettingsFilePath>
+    <!-- CA1707: test naming convention uses underscores -->
+    <NoWarn>CA1707;$(NoWarn)</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Moq" />
+    <PackageReference Include="Testcontainers" />
+    <PackageReference Include="Testcontainers.Kafka" />
+    <PackageReference Include="Testcontainers.MySql" />
+    <PackageReference Include="Testcontainers.Redis" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Harness.Common\Harness.Common.csproj" />
+    <ProjectReference Include="..\..\src\Pacs.Fas.Api\Pacs.Fas.Api.csproj" />
+    <ProjectReference Include="..\..\src\Nldr.Api\Nldr.Api.csproj" />
+    <ProjectReference Include="..\..\src\Pacs.SyncWorker\Pacs.SyncWorker.csproj" />
+    <ProjectReference Include="..\..\src\Nldr.SyncWorker\Nldr.SyncWorker.csproj" />
+  </ItemGroup>
+
+</Project>

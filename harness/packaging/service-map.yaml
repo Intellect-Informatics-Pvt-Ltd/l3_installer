@@ -1,0 +1,200 @@
+# ePACS Sync Test Harness — Service Map for Native Windows Deployment
+# Read by the offline installer's ServiceOrchestrator to register, start, stop,
+# and monitor harness processes as native Windows services.
+#
+# Token substitution (resolved at install time):
+#   ${BinaryRoot}  → C:\Program Files\ePACS\current\harness
+#   ${DataRoot}    → D:\ePACSData
+#
+# PACS-side services are always installed.
+# NLDR-side services are installed ONLY when --demo flag is passed (single-machine demo).
+# See docs/adr/ADR-0007-harness-native-deployment.md for rationale.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PACS-Side Services (always installed on PACS node)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  - name: "ePACS.Harness.FasApi"
+    display_name: "ePACS Harness — FAS API"
+    description: "FAS voucher REST API for the ePACS sync test harness"
+    executable: "${BinaryRoot}\\harness\\Pacs.Fas.Api.exe"
+    arguments: "--urls http://127.0.0.1:5101"
+    account: "ePACSAppSvc"
+    start_order: 110
+    stop_order: 50
+    startup_type: "Automatic"
+    group: "pacs"
+    health_check:
+      type: "http"
+      url: "http://127.0.0.1:5101/health/ready"
+      timeout_seconds: 15
+      expected_status: 200
+    recovery:
+      first_failure: { action: "restart", delay_seconds: 10 }
+      second_failure: { action: "restart", delay_seconds: 30 }
+      subsequent: { action: "restart_and_bundle", delay_seconds: 60 }
+      reset_after_seconds: 86400
+    data_directories: []
+    dependencies:
+      - "ePACSMySQL"
+      - "ePACSCache"
+      - "ePACSEventing"
+
+  - name: "ePACS.Harness.LoansApi"
+    display_name: "ePACS Harness — Loans API"
+    description: "Loans application REST API for the ePACS sync test harness"
+    executable: "${BinaryRoot}\\harness\\Pacs.Loans.Api.exe"
+    arguments: "--urls http://127.0.0.1:5102"
+    account: "ePACSAppSvc"
+    start_order: 120
+    stop_order: 45
+    startup_type: "Automatic"
+    group: "pacs"
+    health_check:
+      type: "http"
+      url: "http://127.0.0.1:5102/health/ready"
+      timeout_seconds: 15
+      expected_status: 200
+    recovery:
+      first_failure: { action: "restart", delay_seconds: 10 }
+      second_failure: { action: "restart", delay_seconds: 30 }
+      subsequent: { action: "restart_and_bundle", delay_seconds: 60 }
+      reset_after_seconds: 86400
+    data_directories: []
+    dependencies:
+      - "ePACSMySQL"
+      - "ePACSCache"
+      - "ePACSEventing"
+
+  - name: "ePACS.Harness.SyncWorker"
+    display_name: "ePACS Harness — PACS Sync Worker"
+    description: "Outbox relay, ACK consumer, heartbeat, and file chunk uploader"
+    executable: "${BinaryRoot}\\harness\\Pacs.SyncWorker.exe"
+    arguments: ""
+    account: "ePACSSyncSvc"
+    start_order: 130
+    stop_order: 40
+    startup_type: "Automatic"
+    group: "pacs"
+    health_check:
+      type: "http"
+      url: "http://127.0.0.1:5103/health/ready"
+      timeout_seconds: 15
+      expected_status: 200
+    recovery:
+      first_failure: { action: "restart", delay_seconds: 15 }
+      second_failure: { action: "restart", delay_seconds: 60 }
+      subsequent: { action: "restart_and_bundle", delay_seconds: 120 }
+      reset_after_seconds: 86400
+    data_directories:
+      - "${DataRoot}\\files\\staging"
+      - "${DataRoot}\\files\\queue"
+    dependencies:
+      - "ePACSMySQL"
+      - "ePACSEventing"
+      - "ePACS.Harness.FasApi"
+
+  - name: "ePACS.Harness.OperatorUi"
+    display_name: "ePACS Harness — Operator UI"
+    description: "Razor MVC field-operator UI (FAS + Loans areas)"
+    executable: "${BinaryRoot}\\harness\\Pacs.OperatorUi.exe"
+    arguments: "--urls http://127.0.0.1:5301"
+    account: "ePACSAppSvc"
+    start_order: 140
+    stop_order: 35
+    startup_type: "Automatic"
+    group: "pacs"
+    health_check:
+      type: "http"
+      url: "http://127.0.0.1:5301/health/live"
+      timeout_seconds: 10
+      expected_status: 200
+    recovery:
+      first_failure: { action: "restart", delay_seconds: 5 }
+      second_failure: { action: "restart", delay_seconds: 15 }
+      subsequent: { action: "restart", delay_seconds: 30 }
+      reset_after_seconds: 86400
+    data_directories: []
+    dependencies:
+      - "ePACS.Harness.FasApi"
+      - "ePACS.Harness.LoansApi"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NLDR-Side Services (installed ONLY with --demo flag)
+# ─────────────────────────────────────────────────────────────────────────────
+
+  - name: "ePACS.Harness.NldrApi"
+    display_name: "ePACS Harness — NLDR API"
+    description: "NLDR central receiver API (strict ingest + commands)"
+    executable: "${BinaryRoot}\\harness\\Nldr.Api.exe"
+    arguments: "--urls http://127.0.0.1:5201"
+    account: "ePACSAppSvc"
+    start_order: 150
+    stop_order: 30
+    startup_type: "Automatic"
+    group: "nldr"
+    health_check:
+      type: "http"
+      url: "http://127.0.0.1:5201/health/ready"
+      timeout_seconds: 15
+      expected_status: 200
+    recovery:
+      first_failure: { action: "restart", delay_seconds: 10 }
+      second_failure: { action: "restart", delay_seconds: 30 }
+      subsequent: { action: "restart_and_bundle", delay_seconds: 60 }
+      reset_after_seconds: 86400
+    data_directories: []
+    dependencies:
+      - "ePACSMySQL"
+      - "ePACSEventing"
+
+  - name: "ePACS.Harness.NldrSyncWorker"
+    display_name: "ePACS Harness — NLDR Sync Worker"
+    description: "ACK publisher, command publisher, heartbeat consumer, file assembler"
+    executable: "${BinaryRoot}\\harness\\Nldr.SyncWorker.exe"
+    arguments: ""
+    account: "ePACSSyncSvc"
+    start_order: 160
+    stop_order: 25
+    startup_type: "Automatic"
+    group: "nldr"
+    health_check:
+      type: "http"
+      url: "http://127.0.0.1:5203/health/ready"
+      timeout_seconds: 15
+      expected_status: 200
+    recovery:
+      first_failure: { action: "restart", delay_seconds: 15 }
+      second_failure: { action: "restart", delay_seconds: 60 }
+      subsequent: { action: "restart_and_bundle", delay_seconds: 120 }
+      reset_after_seconds: 86400
+    data_directories: []
+    dependencies:
+      - "ePACSMySQL"
+      - "ePACSEventing"
+      - "ePACS.Harness.NldrApi"
+
+  - name: "ePACS.Harness.NldrDashboard"
+    display_name: "ePACS Harness — NLDR Dashboard"
+    description: "Razor MVC central observability dashboard"
+    executable: "${BinaryRoot}\\harness\\Nldr.DashboardUi.exe"
+    arguments: "--urls http://127.0.0.1:5401"
+    account: "ePACSAppSvc"
+    start_order: 170
+    stop_order: 20
+    startup_type: "Automatic"
+    group: "nldr"
+    health_check:
+      type: "http"
+      url: "http://127.0.0.1:5401/health/live"
+      timeout_seconds: 10
+      expected_status: 200
+    recovery:
+      first_failure: { action: "restart", delay_seconds: 5 }
+      second_failure: { action: "restart", delay_seconds: 15 }
+      subsequent: { action: "restart", delay_seconds: 30 }
+      reset_after_seconds: 86400
+    data_directories: []
+    dependencies:
+      - "ePACS.Harness.NldrApi"

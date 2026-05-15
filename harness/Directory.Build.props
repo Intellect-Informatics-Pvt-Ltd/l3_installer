@@ -1,0 +1,45 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <LangVersion>12</LangVersion>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Company>Intellect Design Arena Ltd.</Company>
+    <Product>ePACS Sync Test Harness</Product>
+    <Copyright>Copyright © Intellect Design Arena Ltd. 2024-2026</Copyright>
+    <AssemblyVersion>1.0.0</AssemblyVersion>
+    <FileVersion>1.0.0</FileVersion>
+  </PropertyGroup>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════════
+       Native Windows EXE publish profile (win-x64, self-contained, single-file).
+       Activated by: dotnet publish -c Release
+       Individual projects opt-in by being OutputType=Exe or Sdk.Web/Sdk.Worker.
+       Library projects (Harness.Common, Harness.ScenarioPlayer) are excluded via
+       the IsPublishable=false condition below.
+       ═══════════════════════════════════════════════════════════════════════════ -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+  <!-- Libraries are not publishable as standalone EXEs -->
+  <PropertyGroup Condition="'$(IsPackable)' == 'false'">
+    <IsPublishable>false</IsPublishable>
+  </PropertyGroup>
+
+  <!-- Suppress IDE0005 (unused usings) warnings that fire in Razor projects -->
+  <PropertyGroup Condition="'$(MSBuildProjectExtension)' == '.csproj' AND $(MSBuildProjectName.EndsWith('Ui'))">
+    <NoWarn>IDE0005;$(NoWarn)</NoWarn>
+  </PropertyGroup>
+</Project>

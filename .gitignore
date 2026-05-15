@@ -1,71 +1,96 @@
-# Prerequisites
-*.d
+# ═══════════════════════════════════════════════════════════════════════════════
+# .gitignore — ePACS Offline Installer + Sync Test Harness
+# ═══════════════════════════════════════════════════════════════════════════════
 
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
+# ─── .NET Build Output ────────────────────────────────────────────────────────
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Ll]og/
+[Ll]ogs/
 
-# Precompiled Headers
-*.gch
-*.pch
+# ─── Visual Studio / Rider / VS Code ─────────────────────────────────────────
+.vs/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.rsuser
+[Tt]est[Rr]esult*/
+[Dd]ebugPublic/
+[Rr]eleases/
+[Aa]rtifacts/
+*.pidb
+*.svclog
+*.scc
 
-# Linker files
-*.ilk
+# ─── NuGet ────────────────────────────────────────────────────────────────────
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nuget.props
+*.nuget.targets
+project.lock.json
+project.fragment.lock.json
 
-# Debugger Files
-*.pdb
+# ─── Publish Output ───────────────────────────────────────────────────────────
+publish/
+harness/publish/
 
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-*.so.*
+# ─── User Secrets ─────────────────────────────────────────────────────────────
+secrets.json
 
+# ─── JetBrains Rider ──────────────────────────────────────────────────────────
+.idea/
+*.sln.iml
 
-# Fortran module files
-*.mod
-*.smod
+# ─── macOS ────────────────────────────────────────────────────────────────────
+.DS_Store
+**/.DS_Store
 
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
+# ─── Windows ──────────────────────────────────────────────────────────────────
+Thumbs.db
+ehthumbs.db
+Desktop.ini
 
-# Executables
-*.exe
-*.out
-*.app
-
-# Build directories
-build/
-Build/
-build-*/
-
-# CMake generated files
-CMakeFiles/
-CMakeCache.txt
-cmake_install.cmake
-Makefile
-install_manifest.txt
-compile_commands.json
-
-# Temporary files
+# ─── Temporary / Swap ─────────────────────────────────────────────────────────
 *.tmp
-*.log
 *.bak
 *.swp
+*~
+*.log
 
-# vcpkg
-vcpkg_installed/
+# ─── Test Results ─────────────────────────────────────────────────────────────
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+*.trx
 
-# debug information files
-*.dwo
+# ─── Docker volumes (local dev) ──────────────────────────────────────────────
+harness/docker/volumes/
 
-# test output & cache
-Testing/
-.cache/
-.kiro/
+# ─── Evidence folders (generated during test runs) ────────────────────────────
+Evidence/
 
+# ─── Kiro specs (keep tracked — these are design docs) ────────────────────────
+# .kiro/ is tracked intentionally
+
+# ─── Qoder plans ──────────────────────────────────────────────────────────────
+.qoder/
+
+# ─── Miscellaneous ────────────────────────────────────────────────────────────
+*.cache
+*.pidb
+*.pdb
+*.dll
+*.exe
+!harness/scripts/*.ps1
