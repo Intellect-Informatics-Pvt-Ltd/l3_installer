@@ -1,0 +1,15 @@
+**/bin/
+**/obj/
+**/publish/
+**/.vs/
+**/.idea/
+**/node_modules/
+**/*.user
+**/*.suo
+**/docker/
+**/docs/
+**/scripts/
+**/samples/
+**/tests/
+**/.git/
+**/.DS_Store

@@ -137,65 +137,193 @@ harness/
 
 ## 6. First-time setup
 
-### Option A — infra only, `dotnet run` locally (fastest iteration)
+### Option A — Infra in Docker, services local (fastest iteration, recommended for development)
 
 ```bash
-# 1. Start Kafka + 2× MySQL + 2× Redis
+# 1. Clone and build
+cd harness
+dotnet restore ePACS.SyncHarness.sln
+dotnet build ePACS.SyncHarness.sln
+
+# 2. Start infrastructure (Kafka + 2× MySQL + 2× Redis)
 docker compose -f docker/docker-compose.minimal.yml up -d
 
-# 2. Verify all infra containers are healthy
+# 3. Wait for all containers to be healthy (~30 seconds)
 docker compose -f docker/docker-compose.minimal.yml ps
+# All should show "healthy"
 
-# 3. Apply DB migrations (the containers init-db scripts do this automatically
-#    on first start, but you can run the migrator manually if needed)
-#    Simply start each project and it will pick up the seeded DB.
+# 4. Run services (each in a separate terminal)
+dotnet run --project src/Pacs.Fas.Api          # Terminal 1 → :5101
+dotnet run --project src/Nldr.Api              # Terminal 2 → :5201
+dotnet run --project src/Pacs.SyncWorker       # Terminal 3 (outbox relay + ACK consumer)
+dotnet run --project src/Nldr.SyncWorker       # Terminal 4 (ACK publisher)
 
-# 4. Run Pacs.Fas.Api
-dotnet run --project src/Pacs.Fas.Api
-
-# 5. Run Nldr.Api (in a second terminal)
-dotnet run --project src/Nldr.Api
-
-# 6. Run Pacs.SyncWorker (in a third terminal)
-dotnet run --project src/Pacs.SyncWorker
-
-# 7. Run Nldr.SyncWorker (in a fourth terminal)
-dotnet run --project src/Nldr.SyncWorker
+# 5. Verify all healthy
+curl -s http://localhost:5101/health/ready     # → {"status":"Healthy"}
+curl -s http://localhost:5201/health/ready     # → {"status":"Healthy"}
 ```
 
-Default ports when running locally:
-
-| Service | URL |
-|---|---|
-| `Pacs.Fas.Api` | http://localhost:5101 |
-| `Nldr.Api` | http://localhost:5201 |
-| `Pacs.OperatorUi` | http://localhost:5301 |
-| `Nldr.DashboardUi` | http://localhost:5401 |
-| MySQL (PACS) | localhost:3307 |
-| MySQL (NLDR) | localhost:3308 |
-| Redis (PACS) | localhost:6380 |
-| Redis (NLDR) | localhost:6381 |
-| Kafka | localhost:9092 |
-
-### Option B — full Docker Compose (all 7 services containerised)
+### Option B — Full Docker Compose (all 7 services containerised)
 
 ```bash
-# Build and start everything
+# Build images and start everything (infra + all .NET services)
 docker compose -f docker/docker-compose.yml up -d --build
 
 # Watch logs
 docker compose -f docker/docker-compose.yml logs -f pacs-fas-api nldr-api pacs-sync
+
+# Verify
+curl -s http://localhost:5101/health/ready
+curl -s http://localhost:5201/health/ready
 ```
+
+### Port Map (both options use the same ports)
+
+| Service | Port | Protocol | Notes |
+|---------|------|----------|-------|
+| Pacs.Fas.Api | 5101 | HTTP | FAS voucher REST API |
+| Pacs.Loans.Api | 5102 | HTTP | Loans REST API |
+| Pacs.SyncWorker | 5103 | HTTP | Health endpoint only |
+| Pacs.OperatorUi | 5301 | HTTP | Razor MVC UI |
+| Nldr.Api | 5201 | HTTP | NLDR ingest + commands |
+| Nldr.SyncWorker | 5203 | HTTP | Health endpoint only |
+| Nldr.DashboardUi | 5401 | HTTP | Razor MVC dashboard |
+| MySQL (PACS) | 3307 | TCP | user: root / password: root / db: epacs_pacs |
+| MySQL (NLDR) | 3308 | TCP | user: root / password: root / db: epacs_nldr |
+| Redis (PACS) | 6380 | TCP | No auth |
+| Redis (NLDR) | 6381 | TCP | No auth |
+| Kafka | 9092 | TCP | KRaft single-node, PLAINTEXT |
 
 ### Resetting the lab
 
 ```bash
-# Tear down all containers and volumes, reapply migrations, reseed
+# Full reset: drop volumes, recreate containers, reapply migrations, reseed
 bash scripts/reset-lab.sh
 
-# Or for the full profile:
-bash scripts/reset-lab.sh full
+# Quick reset (keeps containers, just clears data):
+bash scripts/reset-lab.sh quick
 ```
+
+**Always reset between test categories.** Never run security tests on leftover data from positive tests.
+
+---
+
+## 6.1 Docker-Based Testing — Team Handoff
+
+This section is the **single reference** for the QA team to get started with Docker-based testing.
+
+### What you need
+
+1. **.NET 8 SDK** — `dotnet --version` should show 8.x
+2. **Docker Desktop 4.x+** — `docker compose version` should show v2.x
+3. **curl + jq** — for API calls and JSON formatting
+4. **MySQL client** (optional) — for direct DB inspection
+
+### Step-by-step: Zero to First Test
+
+```bash
+# ── ONE-TIME SETUP ────────────────────────────────────────
+cd harness
+dotnet restore ePACS.SyncHarness.sln
+dotnet build ePACS.SyncHarness.sln
+
+# ── START INFRA ───────────────────────────────────────────
+docker compose -f docker/docker-compose.minimal.yml up -d
+
+# Wait ~30s, then verify:
+docker compose -f docker/docker-compose.minimal.yml ps
+# kafka, pacs-mysql, nldr-mysql, pacs-redis, nldr-redis → all "healthy"
+
+# ── START SERVICES (4 terminals) ──────────────────────────
+dotnet run --project src/Pacs.Fas.Api          # T1
+dotnet run --project src/Nldr.Api              # T2
+dotnet run --project src/Pacs.SyncWorker       # T3
+dotnet run --project src/Nldr.SyncWorker       # T4
+
+# ── VERIFY HEALTH ────────────────────────────────────────
+curl -s http://localhost:5101/health/ready | jq .
+curl -s http://localhost:5201/health/ready | jq .
+
+# ── RUN YOUR FIRST TEST (happy path) ─────────────────────
+curl -s -X POST http://localhost:5101/api/vouchers \
+  -H "Content-Type: application/json" \
+  -d '{
+    "voucherNo": "VCH-2026-00001",
+    "voucherDate": "2026-05-15",
+    "voucherType": "CR",
+    "narration": "First test",
+    "createdBy": "admin",
+    "lines": [{"accountCode":"1001","debitAmount":0,"creditAmount":5000}]
+  }' | jq .
+
+# Wait 2 seconds for relay + ACK cycle
+sleep 2
+
+# ── VERIFY END-TO-END ────────────────────────────────────
+# Check PACS outbox (should be ACKED)
+mysql -h 127.0.0.1 -P 3307 -u root -proot epacs_pacs \
+  -e "SELECT sequence_no, status, event_id FROM sync_outbox ORDER BY outbox_id DESC LIMIT 1;"
+
+# Check NLDR received it (should be APPLIED)
+mysql -h 127.0.0.1 -P 3308 -u root -proot epacs_nldr \
+  -e "SELECT event_id, apply_status, sequence_no FROM received_event ORDER BY received_id DESC LIMIT 1;"
+```
+
+### Fault Injection Quick Reference
+
+```bash
+# Make NLDR return 500 for next 3 requests (tests retry logic)
+curl -X POST http://localhost:5201/api/test/failure-mode \
+  -H "Content-Type: application/json" -d '{"mode":"http500","count":3}'
+
+# Make NLDR drop ACKs (tests ACK-loss recovery)
+curl -X POST http://localhost:5201/api/test/failure-mode \
+  -H "Content-Type: application/json" -d '{"mode":"dropAck","count":1}'
+
+# Simulate going offline (outbox queues, no publish)
+curl -X POST http://localhost:5101/api/test/offline \
+  -H "Content-Type: application/json" -d '{"enabled":true}'
+
+# Come back online (backlog drains)
+curl -X POST http://localhost:5101/api/test/offline \
+  -H "Content-Type: application/json" -d '{"enabled":false}'
+
+# Reset everything to healthy
+curl -X POST http://localhost:5201/api/test/failure-mode \
+  -H "Content-Type: application/json" -d '{"mode":"healthy"}'
+
+# Check current test state
+curl -s http://localhost:5101/api/test/state | jq .
+curl -s http://localhost:5201/api/test/state | jq .
+```
+
+### Running Automated Tests
+
+```bash
+# Contract tests (no Docker needed, < 1 second)
+dotnet test tests/Harness.ContractTests/Harness.ContractTests.csproj
+
+# Integration tests (Docker required, ~30 seconds)
+dotnet test tests/Harness.IntegrationTests/Harness.IntegrationTests.csproj
+```
+
+### Troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| `NU1507` error on build | Run `dotnet restore` — the `NuGet.Config` has `<clear/>` to isolate sources |
+| MySQL container not healthy | Wait 30s; check `docker logs harness-pacs-mysql-1` |
+| "Connection refused" on :5101 | Service not started yet; check terminal for startup errors |
+| Kafka "topic not found" | Services auto-create topics on startup; restart the service |
+| Outbox stuck in PENDING | Check `Pacs.SyncWorker` terminal for errors; verify Kafka is healthy |
+| NLDR rejects everything | Check if a failure mode is armed: `curl http://localhost:5201/api/test/state` |
+| Port conflict | Ensure nothing else uses 3307, 3308, 6380, 6381, 9092, 5101, 5201 |
+
+### Full Testing Guide
+
+For the complete test case matrix (111 cases), execution steps, evidence collection, and gotchas,
+see **[../docs/test-harness/TESTERS-README.md](../docs/test-harness/TESTERS-README.md)**.
+
 
 ---
 
