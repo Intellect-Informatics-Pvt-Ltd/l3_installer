@@ -1,0 +1,126 @@
+name: Build and Push NuGet Packages
+
+on:
+  push:
+    branches:
+      - master
+
+  workflow_dispatch:
+    inputs:
+      pack_all:
+        description: Pack every package project for verification.
+        required: true
+        type: boolean
+        default: true
+
+      push_packages:
+        description: Publish generated packages to GitHub Packages.
+        required: true
+        type: boolean
+        default: false
+
+      version:
+        description: Optional package version override, for example 1.0.0-preview.1.
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: Build and publish NuGet packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      GITHUB_OWNER: ${{ github.repository_owner }}
+
+      # Temporary token generated automatically for this workflow run.
+      GITHUB_TOKEN: ${{ github.token }}
+
+      # This username must match the owner of GH_TOKEN_NUGET.
+      GITHUB_PACKAGES_USERNAME: intellect-anjaneyulu
+
+      # GH_TOKEN_NUGET is a repository Actions secret containing a classic
+      # PAT with read:packages and write:packages, SSO-authorized if required.
+      # The per-run github.token is used only as a fallback.
+      GITHUB_PACKAGES_PAT: ${{ secrets.GH_TOKEN_NUGET || github.token }}
+      NUGET_API_KEY: ${{ secrets.GH_TOKEN_NUGET || github.token }}
+
+      NUGET_CONFIG: NuGet.Config
+      PACKAGE_OUTPUT_DIR: artifacts/nuget
+      CONFIGURATION: Release
+      INITIAL_VERSION: "1.0.0"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Validate repository configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -f ./build_push_script.sh || {
+            echo "::error::build_push_script.sh was not found."
+            exit 1
+          }
+
+          test -f ./NuGet.Config || {
+            echo "::error::NuGet.Config was not found."
+            exit 1
+          }
+
+          bash -n ./build_push_script.sh
+
+          if grep -Eiq \
+            'ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+' \
+            ./NuGet.Config \
+            ./build_push_script.sh \
+            ./.github/workflows/build.yml; then
+
+            echo "::error::A hardcoded GitHub token was detected."
+            exit 1
+          fi
+
+          echo "Repository configuration validation completed."
+
+      - name: Build, pack and optionally publish NuGet packages
+        shell: bash
+        env:
+          DISPATCH_PACK_ALL: ${{ inputs.pack_all }}
+          DISPATCH_PUSH_PACKAGES: ${{ inputs.push_packages }}
+          DISPATCH_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            export PACK_ALL="${DISPATCH_PACK_ALL:-true}"
+            export PUSH_PACKAGES="${DISPATCH_PUSH_PACKAGES:-false}"
+            export NEW_VERSION="${DISPATCH_VERSION:-}"
+          else
+            export PACK_ALL="true"
+            export PUSH_PACKAGES="true"
+            export NEW_VERSION=""
+          fi
+
+          bash ./build_push_script.sh
+
+      - name: Upload generated NuGet packages
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages-${{ github.event.repository.name }}
+          path: artifacts/nuget/*.nupkg
+          if-no-files-found: warn
+          retention-days: 7
