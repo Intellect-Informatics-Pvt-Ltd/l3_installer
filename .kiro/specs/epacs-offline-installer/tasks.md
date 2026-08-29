@@ -20,7 +20,7 @@
 > shape: the payload bundling, the upgrade/restore/repair engines, and the runtime-target
 > decision that F3 forces.
 >
-> **Framework maturity:** ~12,300 LOC, **138 installer tests + 16 harness contract tests**, 0
+> **Framework maturity:** ~16,000 LOC, **231 installer tests + 16 harness contract tests**, 0
 > integration tests. **The product runs end to end** as of 2026-08-29: verification, prechecks,
 > topology load, install and uninstall execute through a composed pipeline with a checkpoint at
 > every phase. Payload bundling, the database bootstrap, and the upgrade/restore/repair engines
@@ -220,7 +220,13 @@ Worth stating positively, because refusing is most of what an installer should b
 | Payload fails signature or hash | 2, before anything is touched | The only tamper-evidence in force (ADR-0001) |
 | Any blocking precheck | 1, before anything is touched | A half-installed node is worse than none |
 | Malformed service map | 2, before anything is touched | Loaded ahead of the first mutation on purpose |
-| Mode with no engine | 4 | Never 0 — see defect 3 above |
+| Mode with no engine | 4 | Never 0 — see defect 3 above. **Upgrade and Restore left this list on 2026-08-29**; Repair and Backup remain |
+| Upgrade whose pre-upgrade backup does not verify | 2, before staging | A backup that cannot be read is not a way back |
+| Upgrade to an older version | 2, before anything | There is no migration backwards; restore instead |
+| Upgrade outside the manifest's declared window | 2, before anything | An untested path, and a PACS node is the wrong place to find out |
+| Restore with no `--backup` | 64 at the prompt | The installer will not guess which backup overwrites this node's data |
+| Restore of a placeholder dump | 2, before the safety backup | Backups taken before 2026-08-29 restore nothing |
+| Restore that leaves the database empty | 2, safety backup named | `mysql` exits 0 on empty input; the count is the evidence |
 | Data volume cannot host `lower_case_table_names=0` | 1, before anything is touched | The setting is fixed at initialisation; a node built wrongly has to be flattened |
 | MySQL data directory already populated | 1, before anything is touched | Re-initialising would destroy a society's books |
 | Baseline applied but the table count did not move | 2 | rc=0 is not evidence — the estate has been bitten twice |
@@ -381,10 +387,15 @@ and the claim has to be updated with it — which is the point.
   - [ ] Encryption/decryption of the package (15.6 is still open, so there is nothing to decrypt yet).
   - [x] 16.8 Tests.
 
-- [ ] 17. Implement Upgrade Engine — **`IUpgradeEngine` declared; zero implementing types. 17.1–17.9 all unimplemented.**
-  - Note for 17.6: the "atomic junction flip" the interface documents is not achievable with
-    `BinaryDeployer.SwitchCurrentAsync`'s delete-then-create sequence. A power cut between the
-    two leaves no `current` at all. Design a rename-based swap before implementing.
+- [~] 17. Implement Upgrade Engine — **DONE 2026-08-29** except the migration runner itself.
+  - [x] 17.1 Side-by-side flow. `StageAsync` places the new release beside the old **without** committing, so the old release stays whole and startable until the flip.
+  - [x] 17.2 Upgrade path validation — extracted as the pure static `UpgradePath.Validate`, so the cheapest gate in the product is testable without constructing an engine that needs four collaborators. Refuses same-version; refuses **downgrade** (old code against a schema a newer migration already moved, and migrations do not run backwards — restore instead); enforces the manifest's declared window. 12 tests.
+  - [x] 17.3 **Mandatory** pre-upgrade backup — not a flag, not a config value — and it is **verified** before the upgrade proceeds. A backup that was taken but cannot be read is not a way back.
+  - [x] 17.4 Binary staging.
+  - [ ] 17.5 Schema migration runner — **still open, deliberately.** ADR-0005 chose DbUp; the estate's authority is `build/generate-state-migration.py`, and a DbUp corpus would give the estate two sources of schema truth. That needs an ADR superseding 0005 before code, not after.
+  - [x] **17.6 Junction flip — fixed.** Was delete-then-create; a power cut between the two left the node with **no `current` at all**, so nothing started and recovery could not find the release it was part-way through installing. Now: create the new link under a temporary name and `File.Move(overwrite: true)` over the old one, which on POSIX is `rename(2)` and atomic — **verified by experiment before being relied on**. Windows cannot rename over a directory reparse point, so there it falls back to delete-then-create, guarded by an **intent marker** flushed to the platter before either path runs and cleared only once the link is right. `TryCompleteInterruptedSwitchAsync` finishes the job on the next run; a marker whose target has vanished leaves `current` alone, because a complete older release beats no release. 10 tests.
+  - [x] 17.7 Rollback — and it distinguishes what to undo. **Binaries always revert; the DATABASE only reverts when the schema was actually touched.** Restoring a database discards everything written since the backup, so doing it when migration never ran would destroy a day's counter transactions to undo a change that never happened. A rollback that itself fails reports both failures and says the node needs a person.
+  - [x] 17.9 Tests.
 
 - [ ] 18. Implement Repair Mode — **no repair code exists. 18.1–18.6 unimplemented.**
 
