@@ -90,7 +90,12 @@ public sealed class MySqlBootstrapper : IDatabaseBootstrapper
 
         var steps = new List<string>
         {
-            $"Check the data volume can host lower_case_table_names=0 — {(verdict.CanHostEstateSetting ? "yes" : "NO")}",
+            verdict.CanHostEstateSetting
+                ? "Data volume is case-sensitive: lower_case_table_names=0, matching every other database in the estate."
+                : My.AcceptCaseFolding
+                    ? "Data volume is case-INSENSITIVE. Proceeding with lower_case_table_names=1 because AcceptCaseFolding was set. " +
+                      "This node's stored identifiers will differ in case from every Linux node, permanently."
+                    : "Data volume cannot host lower_case_table_names=0 — REFUSED.",
             $"Write {ConfigFilePath}",
             alreadyInitialised
                 ? $"SKIP initialise — {dataDir} already holds a MySQL data directory"
@@ -104,7 +109,7 @@ public sealed class MySqlBootstrapper : IDatabaseBootstrapper
 
         string? blocker = null;
 
-        if (!verdict.CanHostEstateSetting)
+        if (!verdict.CanHostEstateSetting && !My.AcceptCaseFolding)
         {
             blocker = verdict.Explanation;
         }

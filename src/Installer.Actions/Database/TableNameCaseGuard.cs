@@ -3,44 +3,50 @@ using System.Runtime.InteropServices;
 namespace Installer.Actions.Database;
 
 /// <summary>
-/// Decides whether this machine can host the estate's database at all, before anything is
+/// Decides whether this machine can host the estate's database shape, before anything is
 /// initialised.
 ///
-/// ── WHY THIS CLASS EXISTS, AND WHY IT IS THE FIRST THING F3 DOES ────────────────────────────
+/// ── WHAT IS ACTUALLY AT STAKE ───────────────────────────────────────────────────────────────
 ///
-/// L2-R2 runs MySQL with <c>lower_case_table_names=0</c>. That is not a preference: it is a
-/// deliberate discipline, recorded in <c>ops/compose/docker-compose.localdb.yml</c> and enforced
-/// again in <c>ops/ansible/roles/mysqlsvc</c>, because 18 of 20 state captures spell at least
-/// one table in a different case from the baseline. On a case-sensitive server those are two
-/// tables and the mismatch is loud. On a case-insensitive one they silently collapse into one,
-/// and a migration that "worked" is a migration that quietly merged two tables.
+/// <b>Corrected 2026-08-29 after measuring, because the first version of this comment overstated
+/// it.</b> The claim was that a case-folding server would collapse case-differing tables while
+/// applying the baseline. Measured: <c>db/stable_baseline_ddl.sql</c> declares 1,189 tables and
+/// <b>none of them collide when folded to lower case</b>. Imposing the baseline on a
+/// <c>lower_case_table_names=1</c> server produces the same 1,189 tables.
 ///
-/// <b>MySQL cannot be initialised with lower_case_table_names=0 on a case-insensitive file
-/// system.</b> Since 8.0 the server refuses at initialisation:
-/// <c>"The server option 'lower_case_table_names' is configured to use case sensitive table
-/// names but the data directory is on a case-insensitive file system which is an unsupported
-/// combination."</c> And the setting cannot be changed afterwards — it is fixed at initdb time.
+/// The estate's "18 of 20 captures" figure is about something else: one table, <c>DB_Names</c>
+/// vs <c>db_names</c>, where an existing STATE CAPTURE disagreed with the baseline's spelling
+/// and produced <c>ERROR 1146</c> when migrated on a Linux server. That is a migration concern,
+/// it was fixed, and a fresh PACS node does not migrate a capture — it imposes the baseline.
 ///
-/// NTFS is case-insensitive by default. So is APFS on a default macOS install.
+/// ── SO WHY STILL REFUSE BY DEFAULT ──────────────────────────────────────────────────────────
 ///
-/// ── WHAT THAT MEANS FOR AN OFFLINE WINDOWS PACS NODE ────────────────────────────────────────
+/// Because what remains is a permanent, invisible divergence, and the setting cannot be changed
+/// after initialisation. On <c>lower_case_table_names=1</c> MySQL <b>stores</b> identifiers
+/// folded, so the node's own <c>information_schema</c> reports <c>db_names</c> where every Linux
+/// node reports <c>DB_Names</c>. That has consequences the installer cannot fix later:
 ///
-/// A Windows node cannot reproduce the production database's case behaviour. It would run with
-/// <c>lower_case_table_names=1</c>, folding every table name to lower case. The consequences
-/// are not theoretical:
+///   * <b>Schema fingerprinting</b> (tasks.md §19) compares a node against the baseline. Every
+///     mixed-case identifier looks like drift that is not drift, so either the fingerprint
+///     normalises case — and then stops detecting real case drift — or it reports noise.
+///   * <b>Backup and restore across platforms.</b> A dump taken from this node and restored to a
+///     Linux server carries folded names; the reverse carries names this node will fold on
+///     import. Neither direction fails loudly.
+///   * <b>Case errors in SQL are masked here.</b> A query referencing <c>voucherdetails</c> works
+///     on this node and fails on every Linux one. Nothing authored at a PACS site should reach
+///     a state server, but "should not" is not a control.
 ///
-///   * The baseline applies "successfully" on the node while collapsing case-differing tables
-///     that stay distinct in the state's central Linux database.
-///   * A query written and tested at the site works there and fails centrally, or the reverse.
-///   * Data synced from the node carries table references that the central schema does not
-///     resolve the same way.
+/// None of that is fatal, and none of it is discoverable a year later without effort. So the
+/// installer makes it a <b>decision</b> rather than a default: refused unless explicitly
+/// accepted, because an irreversible divergence chosen by accident is the failure worth
+/// preventing here.
 ///
-/// This guard therefore <b>refuses to initialise</b> rather than producing a node whose
-/// database is subtly different from every other node in the estate. The override exists so a
-/// demo or lab machine is not blocked, and it is deliberately awkward to reach.
+/// ── THE UNDERLYING CONSTRAINT, WHICH IS NOT NEGOTIABLE ──────────────────────────────────────
 ///
-/// This is the sharpest place the runtime-target decision bites. It is not something the
-/// installer can engineer around: it is a property of MySQL on a case-insensitive file system.
+/// MySQL refuses to initialise with <c>lower_case_table_names=0</c> on a case-insensitive file
+/// system, and the value is fixed at initialisation. NTFS is case-insensitive by default; so is
+/// APFS on a default macOS install. This is a property of MySQL, not something the installer or
+/// the packaging can work around.
 /// </summary>
 public static class TableNameCaseGuard
 {
@@ -84,12 +90,14 @@ public static class TableNameCaseGuard
                 FileSystemIsCaseSensitive = false,
                 Explanation =
                     $"{probeRoot} is CASE-INSENSITIVE ({RuntimeInformation.OSDescription}). MySQL refuses to initialise with " +
-                    "lower_case_table_names=0 on a case-insensitive file system, and the setting cannot be changed after " +
-                    "initialisation. This node's database would fold table names to lower case while every other database " +
-                    "in the estate keeps them distinct — the baseline would appear to apply while silently collapsing " +
-                    "case-differing tables, and 18 of 20 state captures contain at least one. " +
-                    "Refusing to initialise. Use a case-sensitive volume for the data root, or override only for a lab " +
-                    "or demo machine whose database will never exchange data with a state."
+                    "lower_case_table_names=0 there, and the value is fixed at initialisation — it cannot be changed later. " +
+                    "This node would therefore STORE table names folded to lower case, while every Linux node in the estate " +
+                    "stores them as written. The baseline itself applies cleanly either way (its 1,189 table names do not " +
+                    "collide when folded), so nothing fails today; what you get is a permanent divergence that makes schema " +
+                    "fingerprinting report case as drift, makes cross-platform dump/restore lossy in both directions, and " +
+                    "masks SQL case errors that would fail on a Linux server. " +
+                    "Refused by default because it is irreversible — accept it deliberately with AcceptCaseFolding, or put " +
+                    "the data root on a case-sensitive volume."
             };
     }
 

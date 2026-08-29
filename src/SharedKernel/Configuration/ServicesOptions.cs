@@ -119,6 +119,20 @@ public sealed class MySqlServiceOptions
     /// account that can read business data is a credential sitting in a service definition.
     /// </summary>
     public string HealthCheckUser { get; set; } = "healthcheck";
+
+    /// <summary>
+    /// Initialise MySQL on a case-insensitive volume, accepting <c>lower_case_table_names=1</c>.
+    ///
+    /// Default false. Not because a folded node is broken — the baseline's 1,189 table names do
+    /// not collide when folded, so it applies cleanly — but because the setting is fixed at
+    /// initialisation and the divergence it creates is invisible: schema fingerprinting reports
+    /// case as drift, cross-platform dump and restore is lossy in both directions, and SQL case
+    /// errors that fail on Linux pass here.
+    ///
+    /// An irreversible divergence should be chosen, not defaulted into. Set this deliberately,
+    /// per site, and record why. See <c>TableNameCaseGuard</c>.
+    /// </summary>
+    public bool AcceptCaseFolding { get; set; }
 }
 
 public sealed class CacheServiceOptions

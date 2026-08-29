@@ -85,12 +85,14 @@ public sealed class DatabaseBootstrapTests : IDisposable
             return;
         }
 
-        // On a case-insensitive volume — every default Windows and macOS machine — this MUST
-        // refuse. MySQL cannot initialise with lower_case_table_names=0 there, and the setting
-        // is fixed at initialisation, so a node built wrongly has to be flattened and redone.
+        // On a case-insensitive volume — every default Windows and macOS machine — this refuses
+        // BY DEFAULT. Not because the baseline breaks (its 1,189 table names have zero
+        // collisions when folded) but because the setting is fixed at initialisation and the
+        // divergence it creates is permanent and invisible. Overridable; see the test below.
         plan.CanProceed.Should().BeFalse();
         plan.Blocker.Should().Contain("CASE-INSENSITIVE");
-        plan.Blocker.Should().Contain("cannot be changed after");
+        plan.Blocker.Should().Contain("cannot be changed later");
+        plan.Blocker.Should().Contain("AcceptCaseFolding", "a refusal must name the way past it");
     }
 
     [Fact]
@@ -126,6 +128,37 @@ public sealed class DatabaseBootstrapTests : IDisposable
         var caseSensitive = TableNameCaseGuard.Inspect(Path.Combine(_dataRoot, "mysql", "data")).FileSystemIsCaseSensitive;
         ex.Which.Message.Should().Contain(caseSensitive ? "stable_baseline_ddl.sql" : "CASE-INSENSITIVE",
             "the estate has one schema authority, but the platform guard outranks it");
+    }
+
+
+    [Fact]
+    public async Task Case_folding_can_be_accepted_deliberately()
+    {
+        // CORRECTED 2026-08-29. The first version of this guard refused outright, on the claim
+        // that a folding server would collapse case-differing baseline tables. Measured: the
+        // baseline's 1,189 table names contain ZERO collisions when folded, so it applies
+        // cleanly either way. What remains is a permanent, invisible divergence in STORED case —
+        // real, irreversible, and not fatal. So it is a decision, not a wall.
+        var verdict = TableNameCaseGuard.Inspect(Path.Combine(_dataRoot, "mysql", "data"));
+        if (verdict.FileSystemIsCaseSensitive)
+        {
+            return; // nothing to accept on a case-sensitive volume
+        }
+
+        var accepting = new MySqlServiceOptions { AcceptCaseFolding = true };
+
+        var plan = await Build(accepting).PlanAsync();
+
+        plan.CanProceed.Should().BeTrue("an irreversible divergence should be choosable, once someone has chosen it");
+        plan.Steps.Should().Contain(x => x.Contains("AcceptCaseFolding", StringComparison.Ordinal));
+        plan.Steps.Should().Contain(x => x.Contains("permanently", StringComparison.Ordinal),
+            "the plan must still say plainly what accepting it costs");
+    }
+
+    [Fact]
+    public void Accepting_case_folding_is_off_by_default()
+    {
+        new MySqlServiceOptions().AcceptCaseFolding.Should().BeFalse();
     }
 
     // ── The generated configuration ──────────────────────────────────────────

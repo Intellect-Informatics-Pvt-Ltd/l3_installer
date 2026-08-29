@@ -138,36 +138,45 @@ F3 was built with **Redis as the cache default and Kafka conditional**, as instr
 things surfaced that the Gate-0 decision has to answer. None of them is something the installer
 can engineer around.
 
-### 1. MySQL cannot honour the estate's table-name case setting on Windows — this is the hard one
+### 1. MySQL cannot honour the estate's table-name case setting on Windows
 
-L2-R2 runs `lower_case_table_names=0`. That is a discipline, not a preference:
-`ops/compose/docker-compose.localdb.yml` pins it with the reason attached, and
-`ops/ansible/roles/mysqlsvc` asserts it on every deployment, because **18 of 20 state captures
-spell at least one table in a different case from the baseline**. On a case-sensitive server
-those are two tables and the mismatch is loud. On a case-insensitive one they silently collapse
-into one, and a migration that "worked" is a migration that quietly merged two tables.
+> **CORRECTED 2026-08-29, the same day it was written.** The first version of this section said a
+> case-folding server would collapse case-differing baseline tables. That was wrong, and it was
+> wrong in the direction that makes a decision look forced. Measured:
+> `db/stable_baseline_ddl.sql` declares **1,189 table names and zero of them collide when folded
+> to lower case** — the baseline applies identically either way.
+>
+> The estate's "18 of 20 captures" figure, which the original text leaned on, is
+> [README.md:1170](../../../README.md) and describes something else: **one** table, `DB_Names`
+> vs `db_names`, where an existing **state capture** disagreed with the baseline and produced
+> `ERROR 1146` when migrated on a Linux server. It was fixed. A fresh PACS node imposes the
+> baseline; it does not migrate a capture, so that failure mode does not reach it.
 
-**MySQL refuses to initialise with `lower_case_table_names=0` on a case-insensitive file
-system**, and the setting is fixed at initialisation — it cannot be changed afterwards. NTFS is
-case-insensitive by default; so is APFS on a default macOS install.
+**What is actually true.** MySQL refuses to initialise with `lower_case_table_names=0` on a
+case-insensitive file system, and the value is fixed at initialisation — it cannot be changed
+afterwards. NTFS is case-insensitive by default. That part is a property of MySQL and cannot be
+worked around by the installer or by packaging.
 
-So a Windows PACS node would run with `lower_case_table_names=1`, folding table names, while
-every other database in the estate keeps them distinct. The consequences are not theoretical:
-the baseline applies "successfully" while collapsing case-differing tables; a query written and
-tested at the site works there and fails centrally, or the reverse; and data synced from the
-node carries table references the central schema does not resolve the same way.
+**What that costs.** On `lower_case_table_names=1` MySQL *stores* identifiers folded, so the
+node's `information_schema` reports `db_names` where every Linux node reports `DB_Names`. Nothing
+fails on day one. What you inherit is a permanent divergence:
 
-`TableNameCaseGuard` therefore **refuses to initialise** rather than producing a node whose
-database is subtly different from every other one in the estate. It probes the actual data
-directory by experiment rather than inferring from the OS — Windows supports per-directory case
-sensitivity, Linux can mount a case-insensitive volume, and a network share can be either.
+  * **Schema fingerprinting** (§19) compares a node against the baseline, so every mixed-case
+    identifier reads as drift. Either the fingerprint normalises case — and stops detecting real
+    case drift — or it reports noise on every node.
+  * **Cross-platform dump and restore is lossy in both directions**, and neither direction fails
+    loudly.
+  * **SQL case errors are masked.** A query referencing `voucherdetails` works here and fails on
+    every Linux server.
 
-> **This cannot be fixed in the installer.** It is a property of MySQL on a case-insensitive
-> file system. The options are: a case-sensitive volume for the data root on every Windows node
-> (per-directory case sensitivity via `fsutil`, which is not a supported MySQL configuration
-> and has not been tested by anyone here), accept `lower_case_table_names=1` and re-run the
-> estate's entire migration test matrix against a case-folding server, or the node is not
-> Windows. **This is the sharpest single argument in the whole Gate-0 decision.**
+**What the installer does.** Refuses by default, and names `AcceptCaseFolding` as the way past
+it. Not because a folded node is broken, but because the choice is irreversible and its cost is
+invisible — an irreversible divergence should be chosen, not defaulted into.
+
+**Severity, honestly:** this is a *governed divergence*, not a blocker. It should not by itself
+decide the runtime target. `TableNameCaseGuard` probes the actual data directory by experiment
+rather than inferring from the OS, because Windows supports per-directory case sensitivity and a
+network share can be either.
 
 ### 2. Redis has no official Windows build — and Garnet is not a free substitution
 
