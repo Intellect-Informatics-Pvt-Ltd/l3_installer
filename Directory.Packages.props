@@ -46,6 +46,13 @@
     <PackageVersion Include="System.Security.Cryptography.Pkcs"         Version="10.0.0" />
   </ItemGroup>
 
+  <!-- Data. Schema fingerprinting reads INFORMATION_SCHEMA through a typed client rather than
+       parsing the mysql client's tabular output: that keeps "no default at all" distinct from
+       "defaults to NULL", which the estate's text-based reader needs a sentinel for. -->
+  <ItemGroup>
+    <PackageVersion Include="MySqlConnector"                            Version="2.3.7" />
+  </ItemGroup>
+
   <!-- ── Serialisation ─────────────────────────────────────────────────────
        Release manifests and service maps. -->
   <ItemGroup>
@@ -62,5 +69,8 @@
     <PackageVersion Include="FluentAssertions"                          Version="6.12.2" />
     <PackageVersion Include="Moq"                                       Version="4.20.72" />
     <PackageVersion Include="coverlet.collector"                        Version="6.0.4" />
+    <!-- Lets a test that needs a live server SKIP rather than fail when one is absent. A test
+         that silently passes because it did nothing is worse than one that says it was skipped. -->
+    <PackageVersion Include="Xunit.SkippableFact"                       Version="1.5.23" />
   </ItemGroup>
 </Project>

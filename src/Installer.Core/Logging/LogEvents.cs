@@ -91,4 +91,9 @@ internal static partial class LogEvents
     [LoggerMessage(EventId = 1050, Level = LogLevel.Critical,
         Message = "Refusing to initialise the database: {Reason}")]
     public static partial void DatabaseBootstrapRefused(ILogger logger, string reason);
+
+    // Schema fingerprinting: 1060-1069
+    [LoggerMessage(EventId = 1060, Level = LogLevel.Information,
+        Message = "Schema captured from {Database}: {Tables} table(s), {Columns} column(s), fingerprint {Hash}...")]
+    public static partial void SchemaCaptured(ILogger logger, string database, int tables, int columns, string hash);
 }

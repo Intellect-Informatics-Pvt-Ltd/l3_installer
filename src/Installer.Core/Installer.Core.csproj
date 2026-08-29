@@ -11,6 +11,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="MySqlConnector" />
     <!-- The composition root lives here (DependencyInjection/), so this project binds
          configuration and registers services rather than only consuming IOptions. -->
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />

@@ -72,7 +72,24 @@ jobs:
       - name: Build (harness)
         run: dotnet build harness/ePACS.SyncHarness.sln -c Release --no-restore
 
+      # A real MySQL for the schema-fingerprint tests, on the Linux leg only. Pinned to
+      # lower_case_table_names=0 — the estate's production shape, and the one a Mac cannot
+      # reproduce (see the F3 notes). Without this the ten live tests SKIP, which is honest but
+      # proves nothing about the INFORMATION_SCHEMA queries.
+      - name: Start MySQL for the schema tests
+        if: runner.os == 'Linux'
+        run: |
+          docker run -d --name fp-mysql -p 13399:3306             -e MYSQL_ROOT_PASSWORD=fp -e MYSQL_DATABASE=epacs mysql:8.4             --lower-case-table-names=0 --character-set-server=utf8mb4 --collation-server=utf8mb4_0900_ai_ci
+          for i in $(seq 1 60); do
+            docker exec fp-mysql mysqladmin ping -pfp >/dev/null 2>&1 && break
+            sleep 2
+          done
+          docker exec fp-mysql mysql -pfp -e "SELECT @@lower_case_table_names, VERSION();"
+
       - name: Test (installer)
+        env:
+          # Only set on Linux; on Windows the live tests skip and say so.
+          EPACS_TEST_MYSQL: ${{ runner.os == 'Linux' && 'Server=127.0.0.1;Port=13399;Database=epacs;Uid=root;Pwd=fp' || '' }}
         run: dotnet test ePACS.Installer.sln -c Release --no-build --logger "trx;LogFileName=installer.trx" --results-directory artifacts/test-results
 
       # Contract tests only. The integration, chaos and long-offline suites need Docker and are

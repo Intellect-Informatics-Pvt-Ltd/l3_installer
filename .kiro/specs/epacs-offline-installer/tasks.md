@@ -380,7 +380,14 @@ and the claim has to be updated with it — which is the point.
 
 - [ ] 18. Implement Repair Mode — **no repair code exists. 18.1–18.6 unimplemented.**
 
-- [ ] 19. Implement Schema Fingerprinting — **`ISchemaFingerprinter` declared; zero implementing types. 19.1–19.6 unimplemented.** Upgrade (17.8) and repair both depend on this; implement it first.
+- [x] 19. Implement Schema Fingerprinting — **DONE 2026-08-29.** `Installer.Core/Schema/`.
+  - [x] 19.1 `ISchemaFingerprinter` — reshaped to emit **the estate's own drift keys** (`live-missing-column:t.c`, `live-shape-type:t.c`, …) rather than a third vocabulary. `build/schema_shape.py` states the rule: *"Those two answers have to be THE SAME ANSWER … the first symptom would be a baseline whose header swears there are no divergences while the verifier fails on nine — which is worse than either check alone, because it teaches the reader to disbelieve both."*
+  - [x] 19.2 `INFORMATION_SCHEMA` capture — tables, columns (type/nullability/default), indexes in `SEQ_IN_INDEX` order, primary keys, foreign keys, views. The same queries `verify-baseline-ddl.py` uses, for the reason it gives: the server has already normalised the values. Read through a typed client, which keeps *"no default at all"* distinct from *"defaults to NULL"* without the sentinel the estate's text-based reader needs.
+  - [x] 19.3 Fingerprint hash — sorted before hashing, so it depends on the schema and not on row order. Lets the Agent answer "has anything moved?" by comparing two strings.
+  - [x] 19.4 Drift detection — pure `SchemaDriftComparer`, plus `KnownDriftRegister` reading **the estate's own `db/known-drift.txt`**, so drift a DBA has already dispositioned does not block a node. Stale acknowledgements are reported, because the register's own header explains that a dead exemption is worse than none.
+  - [x] 19.5 Classification. The estate's tooling reports and lets a human decide; the installer runs unattended with nobody to ask, so it classifies conservatively. Two judgements worth knowing: **an extra NOT NULL column with no default is Breaking, not Benign** — every INSERT the release issues omits it and fails with ERROR 1364, which is a breaking difference wearing the costume of an additive one; and **a reordered primary key is Breaking** — column order decides which prefix lookups the index serves, and the estate measured 18 of 47 unwind reads becoming table scans that lock `FOR UPDATE`.
+  - [x] 19.6 Tests — 23 pure classification tests plus **10 against a real MySQL 8.4 with `lower_case_table_names=0`**, including capture → mutate → capture → compare end to end. The live tests skip with a named reason when `EPACS_TEST_MYSQL` is unset; CI sets it on the Linux leg.
+  - **Case folding is a non-issue after all.** Every identifier is lower-cased on capture, exactly as the estate's `live_schema()` does, so a Windows node running `lower_case_table_names=1` produces no spurious drift. The F3 note that fingerprinting "reads case as drift" was true only of a naive implementation.
 
 ---
 

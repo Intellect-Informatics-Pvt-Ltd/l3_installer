@@ -4,6 +4,7 @@ using Installer.Actions.Prechecks;
 using Installer.Actions.Topology;
 using Installer.Actions.Uninstall;
 using Installer.Core.Pipeline;
+using Installer.Core.Schema;
 using Installer.Core.SiteConfig;
 using Installer.Core.StateMachine;
 using ManifestVerifier;
@@ -39,6 +40,11 @@ public static class InstallerServiceCollectionExtensions
         AddStateMachine(services);
 
         services.AddSingleton<ISiteConfigLoader, SiteConfigLoader>();
+
+        // Schema drift detection. Speaks the estate's own drift-key vocabulary and reads its
+        // db/known-drift.txt, so an installer report and a verify-baseline-ddl.py report cannot
+        // give a DBA two different answers about the same database.
+        services.AddSingleton<ISchemaFingerprinter, MySqlSchemaFingerprinter>();
         services.AddSingleton<IInstallerPipeline, InstallerPipeline>();
 
         return services;
