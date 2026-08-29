@@ -238,4 +238,70 @@ public sealed class ServiceMapLoaderTests
 
         await act.Should().ThrowAsync<ServiceMapException>().WithMessage("*not found*");
     }
+
+    // ── Component groups: the Kafka/Redis conditionality ─────────────────────
+
+    [Fact]
+    public async Task The_canonical_map_declares_a_group_on_every_service()
+    {
+        // Ungrouped services survive every filter, so one untagged entry would quietly make a
+        // component unconditional again — which is exactly what conditional payloads exist to
+        // avoid. A new service added without a group fails here.
+        var path = Path.Combine(RepoRoot(), "samples", "service-map.yaml");
+        var text = await File.ReadAllTextAsync(path);
+
+        var serviceCount = text.Split("  - name:").Length - 1;
+        var groupCount = text.Split("    group:").Length - 1;
+
+        groupCount.Should().Be(serviceCount, "every service must declare which component it belongs to");
+    }
+
+    [Fact]
+    public async Task Default_components_install_core_and_cache_but_not_eventing()
+    {
+        // Eventing is off by default: ~290 MB of Kafka + JRE that no deployment in the L2-R2
+        // estate provisions. Cache is on: it holds the idempotency keys.
+        var path = Path.Combine(RepoRoot(), "samples", "service-map.yaml");
+        var groups = new SharedKernel.Configuration.ComponentsOptions().EnabledGroups();
+
+        var services = await NewLoader().LoadAsync(path, groups);
+
+        services.Select(s => s.Name).Should().Contain("ePACSMySQL").And.Contain("ePACSCache");
+        services.Select(s => s.Name).Should().NotContain("ePACSEventing",
+            "Kafka must not be registered as a Windows service when eventing is disabled");
+    }
+
+    [Fact]
+    public async Task Enabling_eventing_brings_kafka_in()
+    {
+        var path = Path.Combine(RepoRoot(), "samples", "service-map.yaml");
+        var options = new SharedKernel.Configuration.ComponentsOptions();
+        options.Eventing.Enabled = true;
+
+        var services = await NewLoader().LoadAsync(path, options.EnabledGroups());
+
+        services.Select(s => s.Name).Should().Contain("ePACSEventing");
+    }
+
+    [Fact]
+    public async Task Disabling_the_cache_leaves_only_core()
+    {
+        var path = Path.Combine(RepoRoot(), "samples", "service-map.yaml");
+        var options = new SharedKernel.Configuration.ComponentsOptions();
+        options.Cache.Enabled = false;
+
+        var services = await NewLoader().LoadAsync(path, options.EnabledGroups());
+
+        services.Select(s => s.Name).Should().NotContain("ePACSCache").And.NotContain("ePACSEventing");
+        services.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void The_cache_provider_defaults_to_what_the_estate_actually_runs()
+    {
+        // ADR-0002 chose Garnet; L2-R2 runs Redis (StackExchange.Redis 2.10.1) and ERPClient's
+        // rate limiter depends on server-side Lua. The default follows the estate, so choosing
+        // Garnet stays a deliberate act backed by a compatibility run.
+        new SharedKernel.Configuration.ComponentsOptions().Cache.Provider.Should().Be("redis");
+    }
 }

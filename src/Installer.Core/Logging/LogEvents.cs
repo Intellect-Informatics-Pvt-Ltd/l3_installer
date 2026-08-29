@@ -87,4 +87,8 @@ internal static partial class LogEvents
     [LoggerMessage(EventId = 1042, Level = LogLevel.Information,
         Message = "Installer lock released: {Path}.")]
     public static partial void InstallerLockReleased(ILogger logger, string path);
+
+    [LoggerMessage(EventId = 1050, Level = LogLevel.Critical,
+        Message = "Refusing to initialise the database: {Reason}")]
+    public static partial void DatabaseBootstrapRefused(ILogger logger, string reason);
 }

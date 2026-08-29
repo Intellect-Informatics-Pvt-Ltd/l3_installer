@@ -1,3 +1,4 @@
+using Installer.Actions.Database;
 using Installer.Actions.Install;
 using Installer.Actions.Prechecks;
 using Installer.Actions.Topology;
@@ -38,7 +39,9 @@ public sealed class InstallerPipeline : IInstallerPipeline
     private readonly IConfigGenerator _configGenerator;
     private readonly IServiceOrchestrator _services;
     private readonly UninstallAction _uninstall;
+    private readonly IDatabaseBootstrapper _database;
     private readonly IOptions<InstallerOptions> _options;
+    private readonly IOptions<ComponentsOptions> _components;
     private readonly ILogger<InstallerPipeline> _logger;
 
     /// <summary>
@@ -62,7 +65,9 @@ public sealed class InstallerPipeline : IInstallerPipeline
         IConfigGenerator configGenerator,
         IServiceOrchestrator services,
         UninstallAction uninstall,
+        IDatabaseBootstrapper database,
         IOptions<InstallerOptions> options,
+        IOptions<ComponentsOptions> components,
         ILogger<InstallerPipeline> logger)
     {
         _stateMachineFactory = stateMachineFactory;
@@ -77,7 +82,9 @@ public sealed class InstallerPipeline : IInstallerPipeline
         _configGenerator = configGenerator;
         _services = services;
         _uninstall = uninstall;
+        _database = database;
         _options = options;
+        _components = components;
         _logger = logger;
     }
 
@@ -221,8 +228,32 @@ public sealed class InstallerPipeline : IInstallerPipeline
         var serviceMapPath = Path.IsPathRooted(opts.ServiceMapPath)
             ? opts.ServiceMapPath
             : Path.Combine(mediaDir, opts.ServiceMapPath);
-        var services = await _serviceMapLoader.LoadAsync(serviceMapPath, cancellationToken: ct);
-        steps.Add($"Topology: {services.Count} service(s) from {Path.GetFileName(serviceMapPath)}.");
+        // Only the components this installation includes. A component that is off must not be
+        // registered as a Windows service and left stopped - a stopped service looks like a
+        // failed install to every operator and every monitoring tool that ever sees it.
+        var groups = _components.Value.EnabledGroups();
+        var services = await _serviceMapLoader.LoadAsync(serviceMapPath, groups, ct);
+        steps.Add($"Topology: {services.Count} service(s) from {Path.GetFileName(serviceMapPath)} (components: {string.Join(", ", groups)}).");
+
+        if (!_components.Value.Eventing.Enabled)
+        {
+            steps.Add("Eventing (Kafka + JRE, ~290 MB) is NOT installed. No deployment in the L2-R2 estate provisions Kafka, " +
+                      "and every publisher sits behind the orchestration kill-switch. Enable Components:Eventing:Enabled if this site needs it.");
+        }
+
+        // ── Database plan ────────────────────────────────────────────────────
+        // Planned here, while everything is still read-only, so a dry run tells the operator
+        // whether the bootstrap would work rather than discovering it after extraction.
+        var dbPlan = await _database.PlanAsync(ct);
+        steps.AddRange(dbPlan.Steps.Select(x => $"database: {x}"));
+
+        if (!dbPlan.CanProceed)
+        {
+            LogEvents.DatabaseBootstrapRefused(_logger, dbPlan.Blocker ?? "unknown");
+            await SafeFailAsync("ERP-INST-DB-REFUSED", dbPlan.Blocker ?? "Database bootstrap refused.", ct);
+            return PipelineResult.Failed(PipelineOutcome.PrecheckFailed, mode, InstallerPhase.Precheck,
+                $"Database bootstrap refused — nothing was installed. {dbPlan.Blocker}", steps);
+        }
 
         // Everything above this line is read-only. This is the last honest stopping point.
         if (request.DryRun)
@@ -254,6 +285,11 @@ public sealed class InstallerPipeline : IInstallerPipeline
             ct);
         steps.Add("Generated site configuration from templates.");
 
+        await _stateMachine.TransitionAsync(InstallerPhase.Migrate, "database", cancellationToken: ct);
+        var baselineDdl = Path.Combine(mediaDir, "db", "stable_baseline_ddl.sql");
+        var dbResult = await _database.ExecuteAsync(baselineDdl, ct);
+        steps.AddRange(dbResult.Steps.Select(x => $"database: {x}"));
+
         await _stateMachine.TransitionAsync(InstallerPhase.Install, "services", cancellationToken: ct);
         await _services.RegisterAllAsync(services, ct);
         await _services.StartAllAsync(services, ct);
@@ -268,7 +304,8 @@ public sealed class InstallerPipeline : IInstallerPipeline
         LogEvents.PipelineSucceeded(_logger, mode, manifest.Manifest.StackVersion);
 
         return PipelineResult.Success(mode, InstallerPhase.Success, steps,
-            $"Installed ePACS {manifest.Manifest.StackVersion} for PACS {request.SiteConfig.PacsId} ({request.SiteConfig.StateCode}).");
+            $"Installed ePACS {manifest.Manifest.StackVersion} for PACS {request.SiteConfig.PacsId} ({request.SiteConfig.StateCode}); " +
+            $"{dbResult.TablesAfter} tables in the database.");
     }
 
     // ── Uninstall ────────────────────────────────────────────────────────────

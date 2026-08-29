@@ -16,7 +16,7 @@
 > - `[~]` — **partial**; the artefact exists but does not yet do the job (evidence note says how)
 > - `[ ]` — **not implemented**; no code exists
 >
-> **Framework maturity:** ~10,200 LOC, **99 installer tests + 16 harness contract tests**, 0
+> **Framework maturity:** ~11,400 LOC, **120 installer tests + 16 harness contract tests**, 0
 > integration tests. **The product runs end to end** as of 2026-08-29: verification, prechecks,
 > topology load, install and uninstall execute through a composed pipeline with a checkpoint at
 > every phase. Payload bundling, the database bootstrap, and the upgrade/restore/repair engines
@@ -39,7 +39,7 @@ can accept the L2-R2 stack. Each is expanded in the phases below.
 |---|---|---|---|
 | ~~**F1**~~ | ~~No composition root.~~ **CLOSED 2026-08-29.** `Installer.Core/DependencyInjection/AddInstaller()` assembles the graph; `Installer.Core/Pipeline/InstallerPipeline` drives verify → precheck → topology → install → checkpoint; `Installer.CLI` builds the host and maps outcomes to exit codes. **The product now runs end to end.** | Closed. See "F1 closure" below for the four defects the first execution exposed. | 12.x |
 | ~~**F2**~~ | ~~No loader for the canonical service map.~~ **CLOSED 2026-08-29.** `Installer.Actions/Topology/ServiceMapLoader` (YamlDotNet), 17 tests, two of them contract tests against the maps that ship. | Closed. The pipeline loads the topology before the first mutation, so a bad map fails while the machine is still clean. | 8.6, 8.7 |
-| **F3** | **No database bootstrap.** Nothing runs `mysqld --initialize`, writes `my.ini`, sets the root password, or creates the `healthcheck` user that `samples/service-map.yaml` pings. `BackupEngine.BackupDatabaseAsync` writes a text file that says "MySQL dump placeholder". | "Bundle the DB so nothing sits outside and nothing gets tampered with" is the reason this framework exists, and it is the part with no implementation. | 8.x (new 8.11), 15.2 |
+| ~~**F3**~~ | ~~No database bootstrap.~~ **CLOSED 2026-08-29** for install. `Installer.Actions/Database/MySqlBootstrapper` initialises the data directory, writes `my.ini`, sets the root password from a generated secret, creates the application and health-check accounts, imposes `stable_baseline_ddl.sql`, and **counts before and after**. Guarded by `TableNameCaseGuard`, which refuses outright where the estate's `lower_case_table_names=0` cannot be honoured. *(15.2 — the backup dump — is still a placeholder and is separate.)* | Closed for install. **The guard is where the runtime-target decision bites hardest — see below.** | 8.11, 15.2 |
 | **F4** | **No config templates.** `ConfigGenerator` scans for `*.template.*`; **no such file exists in the repository**. `ServicesOptions` is a fixed six-property class (MySql, Cache, Eventing, Web, Sync, Agent) with no collection, so it cannot describe N application services. | Site-specific configuration generation is implemented but inert, and cannot express a multi-service payload. | 2.3, 2.8, 8.5 |
 
 ---
@@ -73,6 +73,75 @@ was invisible precisely because nothing had ever run.**
 4. **The `.epcfg` was never opened.** Every site-specific value the installer claimed to honour
    came from a default, including the PacsId it would have installed under.
 
+## F3 — where the runtime-target decision bites
+
+F3 was built with **Redis as the cache default and Kafka conditional**, as instructed. Three
+things surfaced that the Gate-0 decision has to answer. None of them is something the installer
+can engineer around.
+
+### 1. MySQL cannot honour the estate's table-name case setting on Windows — this is the hard one
+
+L2-R2 runs `lower_case_table_names=0`. That is a discipline, not a preference:
+`ops/compose/docker-compose.localdb.yml` pins it with the reason attached, and
+`ops/ansible/roles/mysqlsvc` asserts it on every deployment, because **18 of 20 state captures
+spell at least one table in a different case from the baseline**. On a case-sensitive server
+those are two tables and the mismatch is loud. On a case-insensitive one they silently collapse
+into one, and a migration that "worked" is a migration that quietly merged two tables.
+
+**MySQL refuses to initialise with `lower_case_table_names=0` on a case-insensitive file
+system**, and the setting is fixed at initialisation — it cannot be changed afterwards. NTFS is
+case-insensitive by default; so is APFS on a default macOS install.
+
+So a Windows PACS node would run with `lower_case_table_names=1`, folding table names, while
+every other database in the estate keeps them distinct. The consequences are not theoretical:
+the baseline applies "successfully" while collapsing case-differing tables; a query written and
+tested at the site works there and fails centrally, or the reverse; and data synced from the
+node carries table references the central schema does not resolve the same way.
+
+`TableNameCaseGuard` therefore **refuses to initialise** rather than producing a node whose
+database is subtly different from every other one in the estate. It probes the actual data
+directory by experiment rather than inferring from the OS — Windows supports per-directory case
+sensitivity, Linux can mount a case-insensitive volume, and a network share can be either.
+
+> **This cannot be fixed in the installer.** It is a property of MySQL on a case-insensitive
+> file system. The options are: a case-sensitive volume for the data root on every Windows node
+> (per-directory case sensitivity via `fsutil`, which is not a supported MySQL configuration
+> and has not been tested by anyone here), accept `lower_case_table_names=1` and re-run the
+> estate's entire migration test matrix against a case-folding server, or the node is not
+> Windows. **This is the sharpest single argument in the whole Gate-0 decision.**
+
+### 2. Redis has no official Windows build — and Garnet is not a free substitution
+
+`Components:Cache:Provider` defaults to `redis`, matching what L2-R2 actually runs
+(`StackExchange.Redis 2.10.1`). The cache is not optional: the ansible role puts it plainly —
+it holds the idempotency keys (`fas:idem:`) that stop a retried request posting twice, *"which
+is a correctness concern, not a performance one"*.
+
+There is no official Redis build for Windows. ADR-0002 chose Garnet for exactly that reason,
+and that reasoning is sound. But `l3_ERPClient/Security/RateLimiting/RedisRateLimitStore.cs`
+uses `LoadedLuaScript` (`SCRIPT LOAD` / `EVALSHA`) for sliding-window and concurrency limiting.
+Server-side Lua is Garnet's weakest compatibility area, and that consumer is a **security
+control**, not a cache.
+
+`samples/service-map.yaml` still names `GarnetServer.exe` and now carries a prominent
+`⚠ UNRESOLVED` note saying so. **What has to happen before that line is correct:** run the
+estate's own `utils-caching` and `RedisCaching.Tests` suites, plus ERPClient's rate-limiter
+tests, against a Garnet instance, and record the result in ADR-0002.
+
+### 3. Kafka is a 290 MB payload for a feature nothing provisions — now conditional
+
+`Components:Eventing:Enabled` defaults to **false**. Kafka (110 MB) plus the JRE it needs
+(180 MB) is ~290 MB on every USB stick, and measured against the estate: there is no Kafka role
+in `ops/ansible`, no Kafka service in `ops/compose`, and no mention of Kafka anywhere in `ops/`.
+The client library is referenced by FAS and Loans, but every publisher sits behind the
+orchestration kill-switch (`FAS/ServiceRegistration.cs:286`).
+
+A component that is off is **not registered** rather than registered and left stopped — a
+stopped Windows service looks like a failed install to every operator and monitoring tool that
+sees it. Turning eventing on is one config flag, and it enlarges the medium deliberately.
+
+---
+
 ### What the pipeline will not do
 
 Worth stating positively, because refusing is most of what an installer should be good at:
@@ -84,6 +153,9 @@ Worth stating positively, because refusing is most of what an installer should b
 | Any blocking precheck | 1, before anything is touched | A half-installed node is worse than none |
 | Malformed service map | 2, before anything is touched | Loaded ahead of the first mutation on purpose |
 | Mode with no engine | 4 | Never 0 — see defect 3 above |
+| Data volume cannot host `lower_case_table_names=0` | 1, before anything is touched | The setting is fixed at initialisation; a node built wrongly has to be flattened |
+| MySQL data directory already populated | 1, before anything is touched | Re-initialising would destroy a society's books |
+| Baseline applied but the table count did not move | 2 | rc=0 is not evidence — the estate has been bitten twice |
 | Install with no `.epcfg` | 5 | The node would install under a defaulted identity |
 | Unsigned `.epcfg` | 64 unless explicitly allowed | It decides identity, data root, ports, backup targets |
 | Purge without token + typed confirmation | 64 at the prompt | Caught before anything is stopped |
@@ -165,7 +237,13 @@ and the claim has to be updated with it — which is the point.
   - [ ] 8.8 Firewall rules — **`IFirewallManager` has no implementation.**
   - [ ] 8.9 Windows Update reboot suppression — **no code.**
   - [ ] 8.10 Integration tests for fresh install — **`Installer.IntegrationTests/UnitTest1.cs` is one placeholder fact.**
-  - [ ] **8.11 (NEW) Database bootstrap.** Initialize the bundled MySQL data directory, generate `my.ini` from configuration, set the root password from the generated secret, create the `healthcheck` user the service map's health check authenticates as, and impose the baseline schema. **See F3 — this is the core of the bundling intent and none of it exists.**
+  - [x] **8.11 Database bootstrap.** `Installer.Actions/Database/`. Ordered by what is irreversible: refuse if the volume cannot host `lower_case_table_names=0` → write `my.ini` → initialise (**irreversible**) → start → set root password → create accounts → impose `db/stable_baseline_ddl.sql` → count. 20 tests.
+    - **Counted, never assumed.** The bootstrap fails if the table count did not move after applying the baseline. `ops/README.md` states the rule and why: *"this estate has twice had a seed return rc=0 while landing zero rows."* A MySQL client exiting 0 having applied nothing is exactly that.
+    - **Least privilege.** The application account is scoped to one database and denied DDL — schema changes arrive through the installer, not from a running service. The health-check account gets `USAGE` and nothing else, because its credentials sit in `service-map.yaml`, which is readable on the box. Anonymous accounts are deleted.
+    - **No password on a command line.** Passwords reach MySQL through `MYSQL_PWD` and SQL through stdin; any user on the box can read the process table. `ProcessRunner` also redacts known secrets from captured output, because that output is what an operator pastes into an email when an install fails.
+    - **Durability is not tunable in practice.** `innodb_flush_log_at_trx_commit=1`, `sync_binlog=1`, `innodb_doublewrite=ON`. A PACS node loses power — that is the premise of the product, not an edge case.
+    - **Refuses to re-initialise a populated data directory.** That would destroy a society's books.
+    - Found and fixed on the way: the `${DataRoot}\mysql\data` defaults use Windows separators, so on Linux and macOS the whole path collapsed into one literal directory — CI was exercising a different path shape from the target. Now normalised on expansion.
 
 - [~] 9. Implement Installer.Actions — Uninstall
   - [x] 9.1 Stop in reverse order · [x] 9.2 Deregister · [x] 9.3 Binary removal · [x] 9.4 Data preserved by default

@@ -168,4 +168,13 @@ internal static partial class LogEvents
     [LoggerMessage(EventId = 2012, Message = "Precheck {CheckId}: {Severity} - {Message}")]
     public static partial void PrecheckResultLogged(
         ILogger logger, LogLevel level, string checkId, PrecheckSeverity severity, string message);
+
+    // ── Database bootstrap: 2500-2599 ───────────────────────────────────────
+    [LoggerMessage(EventId = 2501, Level = LogLevel.Information,
+        Message = "MySQL configuration written to {Path} with lower_case_table_names={Lctn}. This value is fixed at initialisation and cannot be changed later.")]
+    public static partial void MySqlConfigWritten(ILogger logger, string path, int lctn);
+
+    [LoggerMessage(EventId = 2502, Level = LogLevel.Information,
+        Message = "Baseline imposed on {Database}: {Before} -> {After} tables.")]
+    public static partial void BaselineImposed(ILogger logger, string database, int before, int after);
 }

@@ -1,6 +1,24 @@
 # ePACS Service Map — Defines all Windows services, their ordering, health checks, and recovery actions.
 # The installer reads this file to register, start, stop, and monitor services.
 # All values are configurable — this file is the single source of truth for service topology.
+#
+# GROUPS (added 2026-08-29). Every entry declares a `group`, and the installer registers only
+# the groups its Components configuration enables:
+#
+#   core      always installed
+#   cache     Components:Cache:Enabled     — default ON. The cache holds the idempotency keys
+#             (fas:idem:) that stop a retried request posting twice, so it is a correctness
+#             dependency, not a performance one.
+#   eventing  Components:Eventing:Enabled  — default OFF. Kafka (110 MB) plus the JRE it needs
+#             (180 MB) is ~290 MB on every USB stick. No deployment in the L2-R2 estate
+#             provisions Kafka: there is no Kafka role in ops/ansible, no Kafka service in
+#             ops/compose, and no mention of it anywhere in ops/. The client library is
+#             referenced by FAS and Loans, but every publisher sits behind the orchestration
+#             kill-switch (FAS/ServiceRegistration.cs:286). Turn it on deliberately for a site
+#             that needs it, and accept the media growth.
+#
+# A component that is off is NOT registered and left stopped. A stopped Windows service looks
+# like a failed install to every operator and every monitoring tool that ever sees it.
 
 services:
   - name: "ePACSMySQL"
@@ -12,6 +30,7 @@ services:
     start_order: 10
     stop_order: 90
     startup_type: "Automatic"
+    group: "core"
     health_check:
       type: "command"
       command: "${BinaryRoot}\\current\\mysql\\bin\\mysqladmin.exe"
@@ -27,15 +46,35 @@ services:
       - "${DataRoot}\\mysql\\data"
       - "${DataRoot}\\mysql\\logs"
 
+  # ⚠ UNRESOLVED, 2026-08-29 — the executable below does not match the configured default.
+  #
+  # Components:Cache:Provider defaults to "redis", because that is what L2-R2 actually runs:
+  # StackExchange.Redis 2.10.1 across the estate, and the ansible role notes the cache holds the
+  # idempotency keys that stop a retried request posting twice.
+  #
+  # This entry still names Garnet, per ADR-0002, and the reason that ADR chose Garnet is real:
+  # THERE IS NO OFFICIAL REDIS BUILD FOR WINDOWS. So on a Windows PACS node the options are
+  # Garnet, a commercial Redis-for-Windows, or not Windows.
+  #
+  # Garnet is not a free substitution. l3_ERPClient/Security/RateLimiting/RedisRateLimitStore.cs
+  # uses LoadedLuaScript (SCRIPT LOAD / EVALSHA) for sliding-window and concurrency limiting —
+  # server-side Lua is Garnet's weakest compatibility area, and that consumer is a security
+  # control, not a cache.
+  #
+  # WHAT HAS TO HAPPEN BEFORE THIS ENTRY IS CORRECT: run the estate's own utils-caching and
+  # RedisCaching.Tests suites, plus ERPClient's rate-limiter tests, against a Garnet instance
+  # and record the result in ADR-0002. Until then this line is a placeholder that will start a
+  # service the application may not be able to use as intended.
   - name: "ePACSCache"
     display_name: "ePACS Cache"
-    description: "Microsoft Garnet cache service for ePACS"
+    description: "Cache service for ePACS — provider unresolved, see the note above"
     executable: "${BinaryRoot}\\current\\garnet\\GarnetServer.exe"
     arguments: "--config ${DataRoot}\\config\\garnet.conf"
     account: "ePACSCacheSvc"
     start_order: 20
     stop_order: 80
     startup_type: "Automatic"
+    group: "cache"
     health_check:
       type: "tcp"
       host: "127.0.0.1"
@@ -58,6 +97,7 @@ services:
     start_order: 30
     stop_order: 70
     startup_type: "Automatic"
+    group: "eventing"
     health_check:
       type: "tcp"
       host: "127.0.0.1"
@@ -81,6 +121,7 @@ services:
     start_order: 50
     stop_order: 50
     startup_type: "Automatic"
+    group: "core"
     health_check:
       type: "http"
       url: "https://127.0.0.1:${Services:Web:HttpsPort}/health/live"
@@ -102,6 +143,7 @@ services:
     start_order: 60
     stop_order: 40
     startup_type: "Automatic"
+    group: "core"
     health_check:
       type: "http"
       url: "http://127.0.0.1:5080/health/live"
@@ -123,6 +165,7 @@ services:
     start_order: 70
     stop_order: 10
     startup_type: "Automatic"
+    group: "core"
     health_check:
       type: "http"
       url: "http://127.0.0.1:5090/health/live"

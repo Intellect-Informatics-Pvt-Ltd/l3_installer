@@ -43,7 +43,9 @@ Use **Apache Kafka 3.7.x LTS in KRaft mode** (single-node, no ZooKeeper).
 
 ## Implementation status (audited 2026-08-29)
 
-**Not realised.** Kafka appears only as a service definition in `samples/service-map.yaml` and
+**Status 2026-08-29: made conditional.** `Components:Eventing:Enabled` defaults to **false** and the service map tags Kafka `group: "eventing"`, so it is neither installed nor registered unless a site asks for it. The sizing argument below is why.
+
+**Not otherwise realised.** Kafka appears only as a service definition in `samples/service-map.yaml` and
 as a manifest payload entry. `Sync.Agent/Outbox/OutboxRelay.cs:36` — the one place that would
 produce to it — is `// TODO: Actual MySQL query + Kafka publish implementation`.
 

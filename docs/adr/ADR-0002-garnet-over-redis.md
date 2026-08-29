@@ -42,7 +42,9 @@ Use **Microsoft Garnet** as the cache layer.
 
 ## Implementation status (audited 2026-08-29)
 
-**Not realised.** Garnet appears in the repository only as a service definition in
+**Status 2026-08-29: contested.** `Components:Cache:Provider` now defaults to `redis`, matching what L2-R2 runs, and `samples/service-map.yaml` carries an `⚠ UNRESOLVED` note where it still names `GarnetServer.exe`. The reasoning in this ADR remains sound — there is no official Redis build for Windows — but the substitution is not free: `l3_ERPClient/Security/RateLimiting/RedisRateLimitStore.cs` uses `LoadedLuaScript` (SCRIPT LOAD / EVALSHA) for rate limiting, which is a security control on Garnet's weakest compatibility surface. Resolve by running `utils-caching`, `RedisCaching.Tests` and ERPClient's rate-limiter tests against Garnet and recording the result here.
+
+**Not otherwise realised.** Garnet appears in the repository only as a service definition in
 `samples/service-map.yaml` and a directory-name comment in `DataRootInitializer.cs:62`. No
 Garnet binary is packaged, and no code connects to it.
 

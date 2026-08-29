@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Installer.Actions.Database;
 using Installer.Actions.Install;
 using Installer.Actions.Prechecks;
 using Installer.Actions.Topology;
@@ -31,6 +32,8 @@ public sealed class InstallerPipelineTests : IDisposable
     private readonly Mock<IConfigGenerator> _config = new();
     private readonly Mock<IServiceOrchestrator> _services = new();
     private readonly Mock<IOverrideTokenValidator> _tokens = new();
+    private readonly Mock<IDatabaseBootstrapper> _database = new();
+    private ComponentsOptions _componentsOptions = new();
     private readonly List<IPrecheck> _prechecks = [];
 
     private InstallerOptions Options => new() { DataRoot = _dataRoot, BinaryRoot = Path.Combine(_dataRoot, "bin") };
@@ -51,7 +54,9 @@ public sealed class InstallerPipelineTests : IDisposable
             _config.Object,
             _services.Object,
             new UninstallAction(_services.Object, _tokens.Object, opts, NullLogger<UninstallAction>.Instance),
+            _database.Object,
             opts,
+            Microsoft.Extensions.Options.Options.Create(_componentsOptions),
             NullLogger<InstallerPipeline>.Instance);
     }
 
@@ -75,6 +80,19 @@ public sealed class InstallerPipelineTests : IDisposable
     private void GivenVerificationSucceeds() =>
         _verifier.Setup(v => v.VerifyAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new ManifestVerificationResult { Valid = true, Manifest = Manifest });
+
+    private void GivenDatabaseCanBootstrap() =>
+        _database.Setup(d => d.PlanAsync(It.IsAny<CancellationToken>()))
+                 .ReturnsAsync(new DatabaseBootstrapPlan
+                 {
+                     CanProceed = true,
+                     CaseSensitivity = new CaseSensitivityVerdict { CanHostEstateSetting = true, FileSystemIsCaseSensitive = true, Explanation = "case-sensitive" },
+                     DataDirectory = "/tmp/data", ConfigFilePath = "/tmp/my.ini", DataDirectoryAlreadyInitialised = false
+                 });
+
+    private void GivenDatabaseExecutes(int before = 0, int after = 1189) =>
+        _database.Setup(d => d.ExecuteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync(new DatabaseBootstrapResult { Succeeded = true, TablesBefore = before, TablesAfter = after });
 
     private void GivenTopology(int count = 2) =>
         _serviceMap.Setup(m => m.LoadAsync(It.IsAny<string>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
@@ -180,6 +198,8 @@ public sealed class InstallerPipelineTests : IDisposable
     public async Task A_warning_precheck_does_not_block()
     {
         GivenVerificationSucceeds();
+        GivenDatabaseCanBootstrap();
+        GivenDatabaseExecutes();
         GivenTopology();
         _prechecks.Add(new StubPrecheck(PrecheckSeverity.Warning, "ERP-INST-PRE-AV", "Antivirus exclusions not configured."));
 
@@ -194,6 +214,8 @@ public sealed class InstallerPipelineTests : IDisposable
     public async Task Dry_run_verifies_and_prechecks_but_touches_nothing()
     {
         GivenVerificationSucceeds();
+        GivenDatabaseCanBootstrap();
+        GivenDatabaseExecutes();
         GivenTopology(3);
 
         var result = await Build().RunAsync(new PipelineRequest { Mode = InstallerMode.Install, SiteConfig = Site, DryRun = true });
@@ -231,6 +253,8 @@ public sealed class InstallerPipelineTests : IDisposable
     public async Task Apply_runs_every_step_in_order_and_checkpoints()
     {
         GivenVerificationSucceeds();
+        GivenDatabaseCanBootstrap();
+        GivenDatabaseExecutes();
         GivenTopology(2);
         var order = new List<string>();
         _dataRootInit.Setup(d => d.InitializeAsync(It.IsAny<CancellationToken>())).Callback(() => order.Add("dataroot")).Returns(Task.CompletedTask);
@@ -259,6 +283,8 @@ public sealed class InstallerPipelineTests : IDisposable
         // Health verification is unimplemented (tasks.md 13.3). Reporting success is honest
         // only because the message says what was NOT checked.
         GivenVerificationSucceeds();
+        GivenDatabaseCanBootstrap();
+        GivenDatabaseExecutes();
         GivenTopology();
 
         var result = await Build().RunAsync(new PipelineRequest { Mode = InstallerMode.Install, SiteConfig = Site, DryRun = false });

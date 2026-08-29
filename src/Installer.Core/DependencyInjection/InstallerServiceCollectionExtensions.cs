@@ -1,3 +1,4 @@
+using Installer.Actions.Database;
 using Installer.Actions.Install;
 using Installer.Actions.Prechecks;
 using Installer.Actions.Topology;
@@ -9,6 +10,7 @@ using ManifestVerifier;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Configuration;
+using SharedKernel.Security;
 
 namespace Installer.Core.DependencyInjection;
 
@@ -67,6 +69,12 @@ public static class InstallerServiceCollectionExtensions
         services.AddOptions<BackupOptions>()
             .Bind(configuration.GetSection(BackupOptions.SectionName))
             .ValidateOnStart();
+
+        // Which components this installation includes. Eventing defaults to OFF: no deployment
+        // in the L2-R2 estate provisions Kafka, and it is a ~290 MB payload with the JRE.
+        services.AddOptions<ComponentsOptions>()
+            .Bind(configuration.GetSection(ComponentsOptions.SectionName))
+            .ValidateOnStart();
     }
 
     private static void AddVerification(IServiceCollection services)
@@ -102,6 +110,12 @@ public static class InstallerServiceCollectionExtensions
         services.AddSingleton<IBinaryDeployer, BinaryDeployer>();
         services.AddSingleton<IConfigGenerator, ConfigGenerator>();
         services.AddSingleton<IServiceOrchestrator, ServiceOrchestrator>();
+
+        // The database bootstrap - the reason the framework exists. ProcessRunner is the only
+        // seam that touches an external binary; everything that decides WHAT to run is pure.
+        services.AddSingleton<IProcessRunner, ProcessRunner>();
+        services.AddSingleton<ISecretStore, SecretStore>();
+        services.AddSingleton<IDatabaseBootstrapper, MySqlBootstrapper>();
 
         // Uninstall's governance gate. IOverrideTokenValidator has no real implementation
         // (tasks.md 9.5), so the registered one REFUSES every token rather than accepting them:
