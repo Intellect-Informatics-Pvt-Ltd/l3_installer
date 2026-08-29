@@ -1,265 +1,193 @@
-# ePACS Offline Installer + Sync Test Harness
+# l3_installer
 
-> An installer **framework** for the ePACS ERP stack on offline Windows PACS nodes — a chassis
-> that verifies a signed payload, prechecks the machine, extracts and deploys it, registers and
-> orders Windows services, and monitors them afterwards. The stack it installs (application,
-> MySQL, cache, eventing) is bundled with it, so an offline node runs no database that was not
-> delivered and verified as part of the installation.
+> No curated summary for this repo yet. What it does is best read from its 3 controller file(s); add a line to `PURPOSE` in `build/generate-module-readmes.py` rather than editing this file.
 
-> ### Status — read this first
->
-> **The framework runs end to end** as of 2026-08-29 — verification, prechecks, topology load,
-> install and uninstall execute through a composed pipeline that checkpoints every phase. It
-> builds clean on **.NET 10** (SDK 10.0.302, pinned in `global.json` to match the L2-R2
-> workspace); CI builds and tests it on Linux and Windows.
->
-> **Dry run is the default.** Nothing changes until you pass `--apply`.
->
-> What is still missing is substantial: there is no payload bundling, no database bootstrap, and
-> no upgrade, restore or repair engine. Those modes now exit **4** with a message naming the
-> missing engine, rather than returning 0 as they used to.
-> **[`.kiro/specs/epacs-offline-installer/tasks.md`](.kiro/specs/epacs-offline-installer/tasks.md)
-> carries a per-item audit** — what is built, what is partial, and what is not started — and is
-> the only place to trust for status. In particular: there is no WiX bootstrapper, no payload
-> build, no database bootstrap, and no upgrade, restore or repair engine.
->
-> `harness/` is a **deliberate stand-in payload**, not the product. It exists so the chassis can
-> be exercised before the real L2-R2 stack is pointed at it. `Pacs.Fas.Api` is a 435-line
-> simulation of `l3_FAS`; it must never be installed onto a node that runs the real thing.
-
----
-
-## What's in This Repository
-
-| Component | Solution | Purpose | Status |
-|-----------|----------|---------|--------|
-| **Offline Installer** | `ePACS.Installer.sln` | The framework: verification, prechecks, topology, install, uninstall, service orchestration, monitoring. Upgrade / repair / restore are designed but unimplemented. | ~10,200 LOC · 99 unit tests · no integration coverage |
-| **Sync Test Harness** | `harness/ePACS.SyncHarness.sln` | Stand-in payload and protocol rig for PACS ↔ NLDR sync. **A simulation, not the product.** | ~3,836 LOC · 15 tests · 5 projects are empty shells |
-
-Both target **.NET 10** on **Windows 10/11 x64** (offline, rural India) — matched to the
-`r2-dev-stable` baseline of the L2-R2 platform, so an offline node carries one runtime and not
-two.
-
----
-
-## Quick Start
-
-### Prerequisites
-
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) — the exact version is pinned
-  in `global.json` (10.0.302). Do not override it; the analyser set is tied to the target
-  framework, and an SDK mismatch turns into build errors rather than warnings.
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (for harness local dev and integration tests)
-
-### Build Everything
-
-```bash
-# Installer
-dotnet build ePACS.Installer.sln
-dotnet test ePACS.Installer.sln
-
-# Harness
-cd harness
-dotnet build ePACS.SyncHarness.sln
-dotnet test tests/Harness.ContractTests/Harness.ContractTests.csproj
-```
-
-### Run the Harness (Development)
-
-```bash
-cd harness
-
-# Start infrastructure (Kafka + MySQL × 2 + Redis × 2)
-docker compose -f docker/docker-compose.minimal.yml up -d
-
-# Start services (each in a separate terminal)
-dotnet run --project src/Pacs.Fas.Api          # http://localhost:5101
-dotnet run --project src/Nldr.Api              # http://localhost:5201
-dotnet run --project src/Pacs.SyncWorker       # outbox relay
-dotnet run --project src/Nldr.SyncWorker       # ACK publisher
-
-# Verify
-curl http://localhost:5101/health/ready        # → 200
-curl http://localhost:5201/health/ready        # → 200
-```
-
-### Create a Voucher (End-to-End Smoke)
-
-```bash
-curl -s -X POST http://localhost:5101/api/vouchers \
-  -H "Content-Type: application/json" \
-  -d '{
-    "voucherNo": "VCH-2026-00001",
-    "voucherDate": "2026-05-15",
-    "voucherType": "CR",
-    "narration": "Test voucher",
-    "createdBy": "admin",
-    "lines": [{"accountCode":"1001","debitAmount":0,"creditAmount":5000}]
-  }' | jq .
-```
-
-This creates a voucher → writes to `sync_outbox` atomically → `Pacs.SyncWorker` relays to Kafka → `Nldr.Api` ingests → `Nldr.SyncWorker` publishes ACK → `Pacs.SyncWorker` marks ACKED.
-
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Installer Package (Authenticode-signed EXE)          NOT BUILT  │
-│  WiX v4 Burn + C# Managed BootstrapperApplication                │
-│  Payloads: MySQL 8.4, Garnet, Kafka 3.7, JRE 17, app services    │
-│  → see ADR-0001 (status: Proposed). No .wxs exists; today the    │
-│    entry point is Installer.CLI, which has no composition root.  │
-└─────────────────────────────────────────────────────────────────┘
-         │ installs
-         ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Runtime (per PACS node)                                         │
-│  C:\Program Files\ePACS\current\                                 │
-│  D:\ePACSData\ (mysql, cache, eventing, logs, config, files)    │
-│                                                                  │
-│  Windows Services:                                               │
-│    MySQL → Garnet → Kafka → Pacs.Fas.Api → Pacs.Loans.Api →    │
-│    Pacs.SyncWorker → Pacs.OperatorUi → InstallerAgent           │
-│                                                                  │
-│  (Demo mode adds: Nldr.Api → Nldr.SyncWorker → Nldr.Dashboard) │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Project Structure
-
-### Installer (`src/`)
-
-| Project | Purpose |
-|---------|---------|
-| `SharedKernel` | Configuration models, contracts, error handling abstractions |
-| `Installer.Core` | State machine with checkpoint persistence (power-cut resilient), the **composition root** (`AddInstaller()`), the **pipeline** that drives a run, the `.epcfg` loader, and the cross-platform concurrency lock |
-| `Installer.Actions` | Prechecks, payload extraction, service orchestration, harness integration |
-| `Installer.Agent` | Always-on worker (health polling, disk monitoring, drift detection) |
-| `Installer.CLI` | The entry point. Builds the composition root, runs the pipeline, maps outcomes to exit codes. Dry run by default. |
-| `ManifestVerifier` | Authenticode signature + SHA-256 payload verification |
-| `SupportBundle` | Diagnostics collector with PII redaction |
-| `BackupRestore` | Backup skeleton. **The MySQL dump itself is a placeholder** (`BackupEngine.cs:253`); restore is unimplemented. |
-| `Sync.Agent` | Connectivity detection and circuit breaker are real; the outbox relay and inbox routing are TODO shells |
-| `Installer.Actions/Topology` | `ServiceMapLoader` — the framework's single topology input (added 2026-08-29) |
-
-### Harness (`harness/src/`)
-
-| Project | Port | Purpose |
-|---------|------|---------|
-| `Harness.Common` | — | Shared contracts: envelope, hash, clock, fault hooks, options |
-| `Pacs.Fas.Api` | 5101 | FAS voucher REST API (INSERT/UPDATE/DELETE with outbox) |
-| `Pacs.Loans.Api` | 5102 | *(empty shell — 9 lines)* |
-| `Pacs.SyncWorker` | 5103 | Outbox drain → Kafka, ACK consumer, heartbeat, file uploader |
-| `Pacs.OperatorUi` | 5301 | *(empty shell — 7 lines)* |
-| `Nldr.Api` | 5201 | Strict central receiver (12-step ingest pipeline) |
-| `Nldr.SyncWorker` | 5203 | ACK publisher, command publisher, heartbeat consumer |
-| `Nldr.DashboardUi` | 5401 | *(empty shell — 7 lines)* |
-| `Harness.ScenarioPlayer` | — | *(empty shell — no source files)* |
-
----
-
-## Running It
-
-```bash
-# What would happen — changes nothing. This is the default.
-Installer.CLI --config=D:\site.epcfg --media=E:\media
-
-# Do it
-Installer.CLI --config=D:\site.epcfg --media=E:\media --apply
-
-# Unattended rollout (no console output)
-Installer.CLI --quiet --config=D:\site.epcfg --apply
-
-# Remove, keeping business data
-Installer.CLI --mode=uninstall --apply
-```
-
-Windows-style `/flag:value` works everywhere `--flag=value` does. Run `--help` for the full list.
-
-**Exit codes** — these are an interface; the rollout tooling branches on them:
+## At a glance
 
 | | |
 |---|---|
-| 0 | Success |
-| 1 | Precheck failure — a prerequisite was not met; **nothing was changed** |
-| 2 | Operation failure |
-| 3 | Health check failure after install |
-| 4 | **Mode not implemented in this build — nothing was done.** Do not treat the node as upgraded, restored or backed up |
-| 5 | Refused — another installer is running, or a required input was missing |
-| 64 | Usage error |
-| 99 | Unexpected error |
-| 130 | Cancelled (Ctrl+C); the run is checkpointed and resumable |
+| Current branch | `baseline/net10-retarget` |
+| HEAD | `8901d37 F3: the database bootstrap, with Redis default and Kafka conditional` |
+| C# files | 178 |
+| Controllers / HTTP endpoints | 3 / 5 |
+| SQL files / tables declared | 12 / 1071 |
+| Test projects | `Harness.ChaosTests`, `Harness.ContractTests`, `Harness.IntegrationTests`, `Harness.LongOfflineTests`, `Installer.IntegrationTests`, `Installer.UnitTests` |
 
----
+## Where this sits relative to `r2-dev-stable`
 
-## Deployment Modes
+`r2-dev-stable` is the single integration branch: **every state's code merges onto it and nowhere else**, and one codebase serves all 30 states. A state branch exists only while that state's work is in flight.
 
-| Mode | How | TestMode | NLDR |
-|------|-----|----------|------|
-| **Development** | Docker infra + `dotnet run` | true | localhost |
-| **Full Docker** | `docker-compose.yml` | true | containerised |
-| **Native Install** | `Installer.CLI /mode:install` | false | remote central |
-| **Demo Install** | `Installer.CLI /mode:install /demo` | true | localhost |
+**This repo has no state branches.** Everything it contains is on `r2-dev-stable` and is common to every state.
 
-### Publishing for Native Windows
+## Tables this repo declares
 
-```powershell
-cd harness
-.\scripts\publish-win-x64.ps1 -CreateZip
+These are the tables named by a `CREATE TABLE` in this repo's own `db/**.sql`. They are **also** in `db/stable_baseline_ddl.sql` in the platform repo, which is what actually provisions a database — a module's `CREATE TABLE IF NOT EXISTS` never fires on a real estate, because every state already carries every product's tables.
 
-# Output:
-#   publish/pacs/Pacs.Fas.Api.exe        (~80 MB each, self-contained)
-#   publish/harness-pacs-win-x64.zip     (installer payload)
-#   publish/harness-nldr-win-x64.zip     (demo-only payload)
+- `ack_log`
+- `agc_accountagentmapping`
+- `agc_accountagentmappingcontrolrecords`
+- `agc_agentdefinecommissionpolicycontrolrecords`
+- `agc_agentdevicemapping`
+- `agc_agentdevicemappingcontrolrecord`
+- `agc_agentproductmapping`
+- `agc_agentproductmappingcontrolrecords`
+- `agc_agentreassigneddetails`
+- `agc_agentregistrationcontrolrecords`
+- `agc_agentregistrationdetails`
+- `agc_agentsecuritydetails`
+- `agc_agentsecuritydetailscontrolrecords`
+- `agc_agentsuspension`
+- `agc_agentsuspensionmaster`
+- `agc_agenttypemaster`
+- `agc_applicationnumbers`
+- `agc_commissioncalculation`
+- `agc_commissiontypes`
+- `agc_defineagentcommission`
+- `agc_guarantordetails`
+- `agc_monthcalendar`
+- `agc_parameterpacspecific`
+- `agc_parameters`
+- `agc_reasonmaster`
+- `agc_tasktypemaster`
+- `aggregatedcounter`
+- `apiservicedetails`
+- `ast_appreciation`
+- `ast_assetallocatedetails`
+- `ast_assetappreciationordepreciation`
+- `ast_assetdeallocatedetails`
+- `ast_assetinsurancedetails`
+- `ast_categorymaster`
+- `ast_commonitems`
+- `ast_depreciationdetails`
+- `ast_frequencymode`
+- `ast_frequnecytypemaster`
+- `ast_hardwareuploadstatus`
+- `ast_itemmaster`
+- …and 1031 more
+
+## FAS & voucher integrity — what `r2-dev-stable` fixed and the switches that govern it
+
+This repo touches the voucher pipeline (**1 file(s)** call the FAS/VoucherProcessing surface or name the voucher tables — measured, see the foot of the file). Every module that posts money rides the same hardened engines, so the platform-level fixes and their switches matter HERE, not just in l3_FAS:
+
+- **Voucher numbering (TD-134).** Numbers come from a per-PACS/branch serialised allocator (advisory lock + counter row `fa_voucherno_counter`). The pre-fix engine could mint the SAME number for two concurrent postings — and returned the duplicate it had just detected. If this module mints any number itself (MAX+1 in its own SQL), that is TD-138 debt: fold it onto the FAS allocator, never extend it.
+- **Module-local MAX+1 allocators (TD-138, 2026-08-21).** The surviving local allocators were audited against real databases, and two of them **had never run**: l3_Loans' bulk-disbursement series query named `VoucherDate` and `Pacid`, columns `fa_vouchermain` does not have (`ERROR 1054`, reproduced on an L1 copy and on a migrated baseline). The rest wrapped the date column in `DATE(...)`, which disqualifies `idx_fa_vouchermain_pacs_branch_date` and scans the estate's largest table on every allocation; they now use half-open ranges that select the identical rows (proven row-for-row on 24,952 real vouchers). **What is NOT fixed:** these allocators still read a MAX rather than incrementing a counter, so two concurrent bulk runs can still collide. That is the open half of TD-138.
+- **Posting rollup (TD-135).** The ledger-ancestor rollup is one transaction: a posting updates the whole chain or fails whole and says so. A voucher this module submits can therefore FAIL LOUDLY where it used to half-post — handle the error; do not retry blindly (the voucher number is already allocated; the reversal path is governed).
+- **Reconciliation (TD-139, P0).** `ops/l2r2 db voucher-recon` (DBA, estate-wide) and *FAS → Balance Corrections → Voucher Number Reconciliation* (admin screen, PACS-scoped) run the same 7 read-only checks: duplicate numbers in scope/year, details without header, headless vouchers, unbalanced vouchers, allocated-never-used, counter sanity. **Empty is the expected outcome.** Findings involving THIS module's vouchers route to the maker–checker correction flow — nothing edits posted history in place.
+- **Pre-posting correction (Punjab Phase 2).** An UNPOSTED voucher can be corrected in place via `IPrepareVoucher/CorrectVoucherTemp` instead of delete-and-recapture. Posted vouchers are refused to the governed reversal. If this module has capture screens, adopt the endpoint rather than growing a local edit.
+
+**The switches** (all live in FAS config; defaults are the shipped best practice — RULE-FA: deviations only by named switch, and every refusal names its switch):
+
+| Switch | Default | Flipping it means |
+|---|---|---|
+| `Fas:VoucherNumbering:UseCounterAllocator` | `true` | `false` = step-1 legacy engine (advisory lock + FOR UPDATE fence), byte-for-byte; flip-safe both ways |
+| `Fas:VoucherNumbering:MaxAllocationAttempts` | `5` | bound of honest retries before a LOUD failure — never returns a proven-duplicate number |
+| `Fas:VoucherNumbering:AllocationLockTimeoutSeconds` | `15` | wait behind another allocator before failing the posting loudly |
+| `Fas:LedgerRollupAtomicity:Enabled` | `true` | `false` = legacy per-level rollup — the half-posted-ledger risk; exists for rollback only |
+| `Fas:PrePostingCorrection:Enabled` | `true` | `false` = corrections refused naming this switch; delete-and-recapture is the only pre-posting path |
+| `Fas:PrePostingCorrection:BalanceTolerance` | `0.005` | Dr−Cr tolerance; `0` = exact balance required |
+| `Fas:VoucherUndo:Mode` | `ReversalOnly` | post-posting correction is ALWAYS a governed reversal — no switch loosens this |
+
+Every switch is flip-safe without data action (a config deploy, not a migration). End-to-end verification per state: [ops/VOUCHER-VERIFICATION-RUNBOOK.md](../ops/VOUCHER-VERIFICATION-RUNBOOK.md) in the platform repo; the design record (disproven designs included) is `l3_FAS/docs/TD-134-135-voucher-numbering-and-rollup.md`.
+
+## Design documents
+
+Hand-written design records in `docs/` — the WHY behind the changes the change log
+below only dates. Read these before modifying the subsystems they cover.
+
+- [Voucher Deletion, Amendment, and Data Integrity Analysis](docs/deletionsenerio.md)
+- [ePACS Offline Installer — Engineering Guide](docs/engineering-guide.md)
+
+## Change log — measured from git, newest first
+
+Every entry below is read from this repo's own commits: **what** changed (the subject), **why** (the commit body's own first paragraph), **which files**, and the register / state-customization **ids** it carries. When a maintenance question arrives as a TD-xx or a state id (KA/AS/TN/WBxxxx), the index maps it straight to the commits, and each commit to its files.
+
+### Commits
+
+**`8901d37`** 2026-08-29 — F3: the database bootstrap, with Redis default and Kafka conditional
+
+> Bundling the database is the reason this framework exists - an offline node must run no database that was not delivered and verified with the installation. It was the part with no implementation at all. Installer.Actions/Database now does it, ordered by what is irreversible:
+
+Files: `.kiro/specs/epacs-offline-installer/tasks.md`, `docs/adr/ADR-0002-garnet-over-redis.md`, `docs/adr/ADR-0003-kafka-kraft-single-node.md`, `samples/service-map.yaml`, `src/Installer.Actions/Database/IDatabaseBootstrapper.cs`, `src/Installer.Actions/Database/IProcessRunner.cs`, `src/Installer.Actions/Database/MyIniWriter.cs`, `src/Installer.Actions/Database/MySqlBootstrapper.cs`, `src/Installer.Actions/Database/ProcessRunner.cs`, `src/Installer.Actions/Database/TableNameCaseGuard.cs` — and 9 more
+
+**`6588854`** 2026-08-29 — F1: the composition root — the installer runs end to end for the first time
+
+> Installer.CLI was a Console.WriteLine and `// TODO: Wire up full installer pipeline with DI`. Nine libraries sat unassembled, so no claim anywhere in tasks.md had ever been executed. This wires them together.
+
+Files: `.kiro/specs/epacs-offline-installer/tasks.md`, `Directory.Packages.props`, `README.md`, `src/Installer.CLI/CliOptions.cs`, `src/Installer.CLI/Installer.CLI.csproj`, `src/Installer.CLI/Program.cs`, `src/Installer.Core/DependencyInjection/DenyAllOverrideTokenValidator.cs`, `src/Installer.Core/DependencyInjection/InstallerServiceCollectionExtensions.cs`, `src/Installer.Core/Installer.Core.csproj`, `src/Installer.Core/Logging/LogEvents.cs` — and 13 more
+
+**`6ba2eba`** 2026-08-29 — Baseline the installer framework to r2-dev-stable: .NET 10, and CI that builds it
+
+> The framework targeted .NET 8 while the payload it is meant to bundle (L2-R2) is .NET 10. Checked out as a sibling inside the L2-R2 workspace, whose global.json pins 10.0.302, it did not build at all: AnalysisLevel was `latest-recommended`, so the analyser set came from whichever SDK the machine had, and TreatWarningsAsErrors turned that difference into 58 errors.
+
+Files: `.github/workflows/build.yml`, `.github/workflows/ci.yml`, `.kiro/specs/epacs-offline-installer/tasks.md`, `AGENTS.md`, `Directory.Build.props`, `Directory.Packages.props`, `README.md`, `docs/adr/ADR-0001-wix-v4-burn-bootstrapper.md`, `docs/adr/ADR-0002-garnet-over-redis.md`, `docs/adr/ADR-0003-kafka-kraft-single-node.md` — and 77 more
+
+**`c8b63fd`** 2026-08-07 — Standardize NuGet package workflow and authentication
+
+Files: `.github/workflows/build.yml`, `NuGet.Config`, `build_push_script.sh`
+
+**`dda1006`** 2026-05-18 — fix(harness): NU1507 NuGet source mapping + Dockerfiles + team handoff docs
+
+> - Fix NU1507 build error: add <clear/> and <packageSourceMapping> to   NuGet.Config so machine-level sources (e.g. GitHub Packages) don't   conflict with central package management - Add Dockerfiles for all 7 harness services (multi-stage build,   aspnet:8.0 runtime image) - Add .dockerignore for fast Docker builds - Add §6.1 "Docker-Based Testing — Team Handoff" to harness/README.md   with step-by-step setup, port map, fault injection reference, and   troubleshooting guide
+
+Files: `harness/.dockerignore`, `harness/NuGet.Config`, `harness/README.md`, `harness/src/Nldr.Api/Dockerfile`, `harness/src/Nldr.DashboardUi/Dockerfile`, `harness/src/Nldr.SyncWorker/Dockerfile`, `harness/src/Pacs.Fas.Api/Dockerfile`, `harness/src/Pacs.Loans.Api/Dockerfile`, `harness/src/Pacs.OperatorUi/Dockerfile`, `harness/src/Pacs.SyncWorker/Dockerfile`
+
+**`5a73cda`** 2026-05-15 — feat(M12): harness native deployment + installer integration + docs
+
+> - Add win-x64 self-contained publish profiles (Directory.Build.props) - Add harness service-map.yaml (7 services with health/recovery) - Add installer-manifest-stub.yaml (CI payload entries) - Add HarnessConfigGenerator (generates appsettings from .epcfg) - Add HarnessServiceMapLoader (parses/filters by group) - Add HarnessSmokeTest (post-install health verification) - Add --demo flag to Installer.CLI (installs NLDR-side too) - Add publish-win-x64.ps1 (build + ZIP script) - Add appsettings.Installer.json (reference native config) - Add ADR-0001 through ADR-0008 (architecture decisions) - Add TESTERS-README.md (1150-line QA handoff guide) - Rewrite AGENTS.md (comprehensive AI assistant contex
+
+Files: `.DS_Store`, `.gitignore`, `.kiro/specs/epacs-offline-installer/.config.kiro`, `.kiro/specs/epacs-offline-installer/design.md`, `.kiro/specs/epacs-offline-installer/requirements.md`, `.kiro/specs/epacs-offline-installer/tasks.md`, `.kiro/specs/epacs-sync-test-harness/.config.kiro`, `.kiro/specs/epacs-sync-test-harness/design.md`, `.kiro/specs/epacs-sync-test-harness/requirements.md`, `.qoder/.DS_Store` — and 456 more
+
+**`6afe492`** 2026-05-14 — Standardize NuGet GitHub Packages token placeholder
+
+Files: `NuGet.Config`
+
+**`d203d67`** 2026-05-14 — Add standard NuGet GitHub package config
+
+Files: `NuGet.Config`
+
+**`e37765e`** 2026-05-08 — removed redundent
+
+Files: `ePACS_SAD_v1.0.docx`, `ePACS_SAD_v1.0.pdf`, `ePACS_SAD_v1.1.docx`, `ePACS_SAD_v1.1.pdf`, `ePACS_SAD_v1.2.docx`, `ePACS_SAD_v1.2.pdf`
+
+**`8609d95`** 2026-05-08 — Version 1.0 of the ePACS Offline installer
+
+Files: `.DS_Store`, `.editorconfig`, `.gitignore`, `.qoder/.DS_Store`, `.qoder/plans/ePACS_Offline_Installer_Plan_ad7e33f1.md`, `AGENTS.md`, `Directory.Build.props`, `README.md`, `docs/AP_DDL.sql`, `docs/deletionsenerio.md` — and 480 more
+
+**`d370526`** 2026-05-04 — Initial commit
+
+Files: `.gitignore`, `README.md`
+
+## How to run it
+
+```bash
+git clone <this repo> && cd l3_installer
+git checkout r2-dev-stable
+dotnet build ePACS.Installer.sln
+dotnet test ePACS.Installer.sln
+```
+
+The database comes from the platform repo, not from here:
+
+```bash
+# in l2r2-platform-build
+mysql -u root -p <empty_database> < db/stable_baseline_ddl.sql
+```
+
+It **refuses a non-empty schema** by design. Verify by counting, not by exit code:
+
+```bash
+mysql -u root -p -N -e "SELECT COUNT(*) FROM information_schema.tables \
+  WHERE table_schema='<db>' AND table_type='BASE TABLE';"
+```
+
+## State READMEs — append, never fork
+
+This file is generated ON `r2-dev-stable` and flows to every state branch through the sync merges, so state branches keep the full base context and history. A state branch that needs its own notes APPENDS a section **below this line** — never edits the generated body above — so the note survives regeneration and merges back cleanly when the state's work lands on stable:
+
+```markdown
+<!-- STATE APPENDIX (r2-dev-XX) — keep everything state-specific below this marker -->
 ```
 
 ---
 
-## Testing
-
-| Test Suite | Docker | Tests | Command |
-|-----------|--------|-------|---------|
-| Installer unit tests | No | **99** | `dotnet test ePACS.Installer.sln` |
-| Installer integration tests | No | **1 placeholder** | (in the same solution) |
-| Harness contract tests | No | **15** | `dotnet test harness/tests/Harness.ContractTests/` |
-| Harness integration tests | Yes | 0 `[Fact]`s; infrastructure only | `dotnet test harness/tests/Harness.IntegrationTests/` |
-| Harness chaos tests | Yes | **empty project** | — |
-| Long offline soak | Yes | **empty project** | — |
-
-There are **no integration tests that install anything**. Every claim in the sections above is
-verified by inspection, not by execution.
-
----
-
-## Key Principles
-
-1. **Zero hardcoding** — every value from `appsettings.json` / `.epcfg` / environment variables
-2. **Power-cut resilient** — every operation resumable from checkpoint (fsync'd state file)
-3. **Offline-first** — no internet dependency after USB media delivery
-4. **Structured logging** — Serilog via `Intellect.Erp.Observability` (IAppLogger, no PII)
-5. **Typed errors** — YAML error catalog via `Intellect.Erp.ErrorHandling`
-6. **Data preservation** — uninstall never deletes business data without governance token
-7. **Tamper-evident** — SHA-256 payload hashing, Authenticode signing
-
----
-
-## Documentation
-
-| Document | Purpose |
-|----------|---------|
-| [AGENTS.md](AGENTS.md) | AI assistant guidance (full project context) |
-| [harness/README.md](harness/README.md) | Harness developer guide (setup, run, test, contribute) |
-| [docs/test-harness/TESTERS-README.md](docs/test-harness/TESTERS-README.md) | QA tester's guide (setup, execution, evidence, gotchas) |
-| [docs/test-harness/00-design-overview.md](docs/test-harness/00-design-overview.md) | Authoritative harness design (~2000 lines) |
-| [docs/adr/](docs/adr/) | Architecture Decision Records (ADR-0001 through ADR-0008) |
-| [samples/](samples/) | Sample manifests, service maps, .epcfg files |
-
----
-
-## License
-
-Proprietary — Intellect Design Arena Ltd.
+*Generated by `build/generate-module-readmes.py` in the platform repo. Do not hand-edit: the next run overwrites it. Numbers above were measured when it ran, so re-run it after a state branch moves.*
