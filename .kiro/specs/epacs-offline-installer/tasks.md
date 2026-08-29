@@ -20,7 +20,7 @@
 > shape: the payload bundling, the upgrade/restore/repair engines, and the runtime-target
 > decision that F3 forces.
 >
-> **Framework maturity:** ~16,000 LOC, **231 installer tests + 16 harness contract tests**, 0
+> **Framework maturity:** ~17,800 LOC, **243 installer tests + 16 harness contract tests**, 0
 > integration tests. **The product runs end to end** as of 2026-08-29: verification, prechecks,
 > topology load, install and uninstall execute through a composed pipeline with a checkpoint at
 > every phase. Payload bundling, the database bootstrap, and the upgrade/restore/repair engines
@@ -220,7 +220,9 @@ Worth stating positively, because refusing is most of what an installer should b
 | Payload fails signature or hash | 2, before anything is touched | The only tamper-evidence in force (ADR-0001) |
 | Any blocking precheck | 1, before anything is touched | A half-installed node is worse than none |
 | Malformed service map | 2, before anything is touched | Loaded ahead of the first mutation on purpose |
-| Mode with no engine | 4 | Never 0 — see defect 3 above. **Upgrade and Restore left this list on 2026-08-29**; Repair and Backup remain |
+| Mode with no engine | 4 | Never 0 — see defect 3 above. **Upgrade, Restore and Repair all left this list on 2026-08-29**; only Backup remains |
+| Repair against a medium carrying a different version | 2, before anything | Changing version is an upgrade, and doing it as "repair" would skip the backup and the migrations |
+| Repair that needs to regenerate config with no `.epcfg` | 2 | Leaving broken configuration in place and reporting success is worse than not running |
 | Upgrade whose pre-upgrade backup does not verify | 2, before staging | A backup that cannot be read is not a way back |
 | Upgrade to an older version | 2, before anything | There is no migration backwards; restore instead |
 | Upgrade outside the manifest's declared window | 2, before anything | An untested path, and a PACS node is the wrong place to find out |
@@ -397,7 +399,15 @@ and the claim has to be updated with it — which is the point.
   - [x] 17.7 Rollback — and it distinguishes what to undo. **Binaries always revert; the DATABASE only reverts when the schema was actually touched.** Restoring a database discards everything written since the backup, so doing it when migration never ran would destroy a day's counter transactions to undo a change that never happened. A rollback that itself fails reports both failures and says the node needs a person.
   - [x] 17.9 Tests.
 
-- [ ] 18. Implement Repair Mode — **no repair code exists. 18.1–18.6 unimplemented.**
+- [x] 18. Implement Repair Mode — **DONE 2026-08-29.** `Installer.Core/Repair/RepairEngine`.
+  - **The boundary is the design.** Repair owns what the RELEASE owns — payloads, generated configuration, service registrations, the `current` link. It never touches what the SITE owns — database, attachments, logs, backups. That line is the whole safety argument: repair is the one operation an operator can run without a backup and without a decision, and it stays that way only for as long as it cannot destroy anything. A data problem is restore; a schema problem is upgrade or a DBA.
+  - [x] 18.1 Payload verification against the installed manifest — the same media gate install and upgrade use. Re-laying binaries from an unverified medium turns a drifted node into a compromised one.
+  - [x] 18.2 Binary replacement, and `--replace-binaries` for a suspected quarantine where "looks intact" is exactly what cannot be trusted.
+  - [x] 18.3 Configuration regeneration. **Refuses rather than skips** when no `.epcfg` is supplied: a repair that leaves broken configuration in place and reports success is worse than one that did not run.
+  - [ ] 18.4 ACL re-application — `IAclEngine` still has no implementation on either platform.
+  - [x] 18.5 Service re-registration — **unconditional**, because it is idempotent and cheap and a service whose binary path or environment has drifted is invisible until it fails to start, which is the situation somebody runs repair to get out of.
+  - [x] 18.6 Tests — 13. Everything is diagnosed **before** anything changes, so a dry run is a complete answer rather than a prefix of one.
+  - **Refuses a medium carrying a different version**, naming upgrade as the right tool: changing version under the name "repair" would skip the backup and the migrations an upgrade takes.
 
 - [x] 19. Implement Schema Fingerprinting — **DONE 2026-08-29.** `Installer.Core/Schema/`.
   - [x] 19.1 `ISchemaFingerprinter` — reshaped to emit **the estate's own drift keys** (`live-missing-column:t.c`, `live-shape-type:t.c`, …) rather than a third vocabulary. `build/schema_shape.py` states the rule: *"Those two answers have to be THE SAME ANSWER … the first symptom would be a baseline whose header swears there are no divergences while the verifier fails on nine — which is worse than either check alone, because it teaches the reader to disbelieve both."*

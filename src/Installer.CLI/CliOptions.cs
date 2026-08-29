@@ -23,6 +23,8 @@ internal sealed class CliOptions
     public bool Apply { get; private set; }
     public bool AllowUnsignedConfig { get; private set; }
     public bool PurgeData { get; private set; }
+    public bool RegenerateConfiguration { get; private set; }
+    public bool ReplaceBinaries { get; private set; }
     public string? ConfigPath { get; private set; }
     public string? MediaDirectory { get; private set; }
 
@@ -71,6 +73,8 @@ internal sealed class CliOptions
             case "dry-run": Apply = false; return true;
             case "allow-unsigned-config": AllowUnsignedConfig = true; return true;
             case "purge-data": PurgeData = true; return true;
+            case "regenerate-config": RegenerateConfiguration = true; return true;
+            case "replace-binaries": ReplaceBinaries = true; return true;
 
             case "config": ConfigPath = value; return value is not null;
             case "media": MediaDirectory = value; return value is not null;
@@ -162,6 +166,9 @@ internal sealed class CliOptions
           --quiet                  No console output (for unattended rollout).
           --verbose                Debug-level logging.
           --allow-unsigned-config  Accept an unsigned .epcfg. DEVELOPMENT ONLY.
+          --regenerate-config      Repair only. Regenerate configuration from templates even
+                                   if it looks intact. DISCARDS hand edits.
+          --replace-binaries       Repair only. Re-lay binaries even if they look intact.
           --purge-data             Uninstall only. Destroys business data. Requires
                                    --override-token and --confirm.
           --override-token=<jwt>   Signed governance token authorising a purge.
@@ -187,7 +194,9 @@ internal sealed class CliOptions
           Installer.CLI --config=D:\site.epcfg --apply             # install
           Installer.CLI --quiet --config=D:\site.epcfg --apply     # unattended
           Installer.CLI --mode=uninstall --apply                   # remove, keep the data
-          Installer.CLI --mode=upgrade --media=E:\\media --apply    # upgrade, backing up first
-          Installer.CLI --mode=restore --backup=D:\\ePACSData\\backups\\bk-123 --apply
+          Installer.CLI --mode=upgrade --media=E:\media --apply    # upgrade, backing up first
+          Installer.CLI --mode=restore --backup=D:\ePACSData\backups\bk-123 --apply
+          Installer.CLI --mode=repair --media=E:\media            # what is wrong
+          Installer.CLI --mode=repair --media=E:\media --apply    # fix it; data untouched
         """;
 }

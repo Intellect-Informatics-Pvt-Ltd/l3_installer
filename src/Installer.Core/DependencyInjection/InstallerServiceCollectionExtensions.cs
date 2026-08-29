@@ -6,6 +6,7 @@ using Installer.Actions.Uninstall;
 using Installer.Core.Pipeline;
 using Installer.Core.Schema;
 using Installer.Core.Upgrade;
+using Installer.Core.Repair;
 using BackupRestore.Backup;
 using BackupRestore.Restore;
 using Installer.Core.SiteConfig;
@@ -56,6 +57,11 @@ public static class InstallerServiceCollectionExtensions
         services.AddSingleton<IRestoreEngine, RestoreEngine>();
         services.AddSingleton<IServiceMapLoaderAdapter, InstalledServiceMapLoader>();
         services.AddSingleton<IUpgradeEngine, UpgradeEngine>();
+
+        // Repair. Registered beside them because it is the third answer to "this node is wrong":
+        // upgrade moves version, restore replaces data, repair re-lays what the release owns and
+        // deliberately touches no data at all.
+        services.AddSingleton<IRepairEngine, RepairEngine>();
         services.AddSingleton<IInstallerPipeline, InstallerPipeline>();
 
         return services;

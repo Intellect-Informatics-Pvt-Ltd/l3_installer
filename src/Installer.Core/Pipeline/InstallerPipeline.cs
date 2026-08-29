@@ -5,6 +5,7 @@ using Installer.Actions.Topology;
 using Installer.Actions.Uninstall;
 using Installer.Core.StateMachine;
 using Installer.Core.Upgrade;
+using Installer.Core.Repair;
 using BackupRestore.Restore;
 using ManifestVerifier;
 using Microsoft.Extensions.Logging;
@@ -44,6 +45,7 @@ public sealed class InstallerPipeline : IInstallerPipeline
     private readonly IDatabaseBootstrapper _database;
     private readonly IUpgradeEngine _upgrade;
     private readonly IRestoreEngine _restore;
+    private readonly IRepairEngine _repair;
     private readonly IOptions<InstallerOptions> _options;
     private readonly IOptions<ComponentsOptions> _components;
     private readonly ILogger<InstallerPipeline> _logger;
@@ -72,6 +74,7 @@ public sealed class InstallerPipeline : IInstallerPipeline
         IDatabaseBootstrapper database,
         IUpgradeEngine upgrade,
         IRestoreEngine restore,
+        IRepairEngine repair,
         IOptions<InstallerOptions> options,
         IOptions<ComponentsOptions> components,
         ILogger<InstallerPipeline> logger)
@@ -91,6 +94,7 @@ public sealed class InstallerPipeline : IInstallerPipeline
         _database = database;
         _upgrade = upgrade;
         _restore = restore;
+        _repair = repair;
         _options = options;
         _components = components;
         _logger = logger;
@@ -126,10 +130,10 @@ public sealed class InstallerPipeline : IInstallerPipeline
                 InstallerMode.Upgrade   => await RunUpgradeAsync(request, mode, steps, cancellationToken),
                 InstallerMode.Restore   => await RunRestoreAsync(request, mode, steps, cancellationToken),
 
+                InstallerMode.Repair    => await RunRepairAsync(request, mode, steps, cancellationToken),
+
                 // Still without an implementing type. Saying so is the correct behaviour: see
                 // PipelineOutcome.NotImplemented.
-                InstallerMode.Repair => NotImplemented(mode, steps,
-                    "Repair is not implemented in this build (tasks.md §18)."),
                 InstallerMode.Backup => NotImplemented(mode, steps,
                     "Backup is not usable in this build: BackupEngine writes a placeholder file instead of a MySQL dump " +
                     "(tasks.md §15.2). A backup taken now would restore nothing."),
@@ -388,6 +392,34 @@ public sealed class InstallerPipeline : IInstallerPipeline
                 "Sync state must be reconciled before this node resumes sending.")
             : PipelineResult.Failed(PipelineOutcome.OperationFailed, mode, InstallerPhase.Restore,
                 result.ErrorMessage ?? "The restore failed.", steps);
+    }
+
+    // ── Repair ───────────────────────────────────────────────────────────────
+
+    private async Task<PipelineResult> RunRepairAsync(
+        PipelineRequest request, InstallerMode mode, List<string> steps, CancellationToken ct)
+    {
+        var opts = _options.Value;
+        var mediaDir = request.MediaDirectory
+            ?? Path.GetDirectoryName(Path.GetFullPath(opts.ManifestPath))
+            ?? Directory.GetCurrentDirectory();
+
+        var result = await _repair.RepairAsync(new RepairRequest
+        {
+            MediaDirectory = mediaDir,
+            SiteConfig = request.SiteConfig,
+            RegenerateConfiguration = request.RegenerateConfiguration,
+            ReplaceBinaries = request.ReplaceBinaries,
+            DryRun = request.DryRun
+        }, ct);
+
+        steps.AddRange(result.Findings.Select(f => $"found: [{f.Severity}] {f.Area} — {f.Message}"));
+        steps.AddRange(result.Repaired.Select(r => $"did: {r}"));
+
+        return result.Success
+            ? PipelineResult.Success(mode, InstallerPhase.Success, steps, result.Message)
+            : PipelineResult.Failed(PipelineOutcome.OperationFailed, mode, InstallerPhase.Repair,
+                result.Message ?? "The repair failed.", steps);
     }
 
     // ── Uninstall ────────────────────────────────────────────────────────────

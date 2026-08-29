@@ -121,4 +121,8 @@ internal static partial class LogEvents
     [LoggerMessage(EventId = 1077, Level = LogLevel.Critical,
         Message = "ROLLBACK FAILED after a failed upgrade to {Version}. This node needs a person. Backup: {Backup}.")]
     public static partial void RollbackFailed(ILogger logger, Exception exception, string version, string backup);
+
+    [LoggerMessage(EventId = 1090, Level = LogLevel.Information,
+        Message = "Repair of {Version} complete: {Steps} step(s). Data was not touched.")]
+    public static partial void RepairCompleted(ILogger logger, string version, int steps);
 }
