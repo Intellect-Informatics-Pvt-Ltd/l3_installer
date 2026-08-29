@@ -6,7 +6,7 @@
 
 ## 1. Project Overview
 
-This repository contains **two .NET 8 solutions** that together form the ePACS offline deployment and sync verification stack:
+This repository contains **two .NET 10 solutions** that together form the ePACS offline deployment and sync verification stack:
 
 | Solution | Path | Purpose |
 |----------|------|---------|
@@ -21,7 +21,7 @@ This repository contains **two .NET 8 solutions** that together form the ePACS o
 
 | Component | Technology | Version |
 |-----------|-----------|---------|
-| Language | C# 12 | .NET 8 LTS |
+| Language | C# 14 | .NET 10, SDK pinned to 10.0.302 in `global.json` |
 | Installer framework | WiX v4 Burn | 4.x |
 | Database | MySQL | 8.4 LTS |
 | Cache | Microsoft Garnet | Latest stable |
@@ -89,7 +89,7 @@ This repository contains **two .NET 8 solutions** that together form the ePACS o
 │
 └── harness/                               ← Sync Test Harness (separate solution)
     ├── ePACS.SyncHarness.sln
-    ├── Directory.Build.props              # net8.0, win-x64 self-contained publish in Release
+    ├── Directory.Build.props              # net10.0, win-x64 self-contained publish in Release
     ├── Directory.Packages.props           # Central NuGet version pinning
     ├── NuGet.Config
     ├── README.md                          # Harness developer guide

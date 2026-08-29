@@ -51,7 +51,7 @@ public sealed class FileSyncMonitor : IMonitor
             return;
         }
 
-        _logger.LogInformation("Starting file sync scan of {Dir}.", attachmentsDir);
+        LogEvents.FileSyncScanStarting(_logger, attachmentsDir);
 
         // Scan for files that need syncing
         var filesToSync = await ScanForPendingFilesAsync(attachmentsDir, cancellationToken);
@@ -62,9 +62,8 @@ public sealed class FileSyncMonitor : IMonitor
             return;
         }
 
-        _logger.LogInformation("Found {Count} files pending sync. Total size: {SizeMb:F1} MB.",
-            filesToSync.Count,
-            filesToSync.Sum(f => f.SizeBytes) / (1024.0 * 1024.0));
+        var pendingBytes = filesToSync.Sum(f => f.SizeBytes);
+        LogEvents.FileSyncPending(_logger, filesToSync.Count, pendingBytes / (1024.0 * 1024.0));
 
         // Respect batch size limit
         var batchSizeLimit = options.MaxUploadBatchSizeMb * 1024L * 1024L;
@@ -82,15 +81,14 @@ public sealed class FileSyncMonitor : IMonitor
             batchSize += file.SizeBytes;
         }
 
-        _logger.LogInformation("Processing batch of {Count} files ({SizeMb:F1} MB).",
-            batch.Count, batchSize / (1024.0 * 1024.0));
+        LogEvents.FileSyncBatch(_logger, batch.Count, batchSize / (1024.0 * 1024.0));
 
         // TODO: Upload via IFileSyncTransport (HTTPS or SFTP based on config)
         // For now, log what would be synced
         foreach (var file in batch)
         {
-            _logger.LogInformation("Would sync: {Path} ({Hash}, {SizeKb:F0} KB).",
-                file.RelativePath, file.ContentHash[..12] + "...", file.SizeBytes / 1024.0);
+            LogEvents.FileSyncWouldSync(
+                _logger, file.RelativePath, file.ContentHash[..12] + "...", file.SizeBytes / 1024.0);
         }
     }
 

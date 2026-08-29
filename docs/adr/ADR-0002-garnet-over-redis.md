@@ -37,3 +37,18 @@ Use **Microsoft Garnet** as the cache layer.
 - Must validate Garnet compatibility with all StackExchange.Redis features used
 - Garnet config file (`garnet.conf`) must be templated by the installer
 - Health check uses TCP probe (same as Redis)
+
+---
+
+## Implementation status (audited 2026-08-29)
+
+**Not realised.** Garnet appears in the repository only as a service definition in
+`samples/service-map.yaml` and a directory-name comment in `DataRootInitializer.cs:62`. No
+Garnet binary is packaged, and no code connects to it.
+
+**Open point for the real payload.** Every L2-R2 module that caches uses `StackExchange.Redis`
+(`utils-caching`). Garnet is wire-compatible with the Redis protocol, so this is *probably*
+fine — but "probably" is not a decision. Before packaging Garnet, run the estate's own caching
+tests (`utils-caching`, `RedisCaching.Tests`) against a Garnet instance and record the result
+here. The things that historically break wire-compatible substitutes are Lua scripting,
+keyspace notifications, and `SCAN` semantics; check those specifically.

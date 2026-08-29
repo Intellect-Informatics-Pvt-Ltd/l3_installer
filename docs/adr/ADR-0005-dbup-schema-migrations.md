@@ -40,3 +40,24 @@ Use **DbUp** as the migration runner, embedded in the installer and harness star
 - The installer runs migrations as part of the Install/Upgrade state machine phase
 - Harness services run migrations at startup (development mode only)
 - `Percona pt-online-schema-change` is used for large-table DDL in production (not DbUp)
+
+---
+
+## Implementation status (audited 2026-08-29)
+
+**Not realised in the installer.** `DbUp` appears in `src/` only as a comment in
+`IUpgradeEngine.cs:8`. There is no DbUp package reference in any installer project and no
+migration runner. (`DbUp-MySql` is pinned in `harness/Directory.Packages.props` and used by
+`Harness.IntegrationTests/Infrastructure/MigratorHelper.cs` for the harness's own toy schema —
+that is a different thing.)
+
+**This decision must be re-taken against the real payload.** L2-R2 does not use DbUp. Its
+schema authority is a single generated file, `db/stable_baseline_ddl.sql` (1,189 tables,
+apply-verified on MySQL 8.4 and 9.x), with state-level changes produced by
+`build/generate-state-migration.py` and applied through `ops/l2r2 db`. Introducing DbUp as a
+second migration corpus would give the estate two sources of schema truth, which is precisely
+what the unified-baseline work removed.
+
+**Recommended replacement decision:** the installer *imposes the baseline* on fresh install and
+*delegates upgrade migrations to the estate's own generator*, rather than owning a migration
+runner. Write that as ADR-0009 and supersede this one.

@@ -1,7 +1,7 @@
 # ADR-0007: Harness Native Windows Deployment via Offline Installer
 
-**Status:** Accepted  
-**Date:** 2026-05-15  
+**Status:** **Partially implemented** — see Implementation status, added 2026-08-29  
+**Date:** 2026-05-15 · **Status revised:** 2026-08-29  
 **Deciders:** Architecture team  
 **Relates to:** Design Overview §14.3, §23.5, §29 (M12)
 
@@ -133,7 +133,7 @@ When the installer CLI receives `--demo`:
 | Alternative | Why rejected |
 |---|---|
 | Docker on pilot sites | No Docker Desktop on offline Windows machines; licensing concerns |
-| Framework-dependent publish | Requires .NET 8 runtime pre-installed — violates offline-first |
+| Framework-dependent publish | Requires the .NET runtime pre-installed (net10.0 since 2026-08-29) — violates offline-first |
 | Trimmed publish | Dapper + Confluent.Kafka + System.Text.Json polymorphism break under trimming |
 | Single monolithic EXE (all services in one process) | Violates module isolation; can't restart individual services; doesn't match production topology |
 | NSSM (Non-Sucking Service Manager) wrapper | Extra dependency; `sc.exe` is sufficient and already implemented |
@@ -148,3 +148,33 @@ When the installer CLI receives `--demo`:
 - `harness/packaging/installer-manifest-stub.yaml` — CI payload manifest
 - `src/Installer.Actions/Install/ServiceOrchestrator.cs` — existing service registration
 - `src/Installer.Actions/Install/PayloadExtractor.cs` — existing payload extraction
+
+---
+
+## Implementation status (audited 2026-08-29)
+
+| Decision | Status | Evidence |
+|---|---|---|
+| §1 Self-contained single-file `win-x64` publish | **Built, verified** | Produces a 53 MB single-file `.exe` on .NET 10 (this ADR estimated ~80 MB on .NET 8 — compression improved). **Amended 2026-08-29:** `RuntimeIdentifier` is no longer set in `harness/Directory.Build.props`; it is passed by the publish step. The blanket `Configuration == Release` condition made every Release *build* win-x64, including test projects, which inherit the RID through their `ProjectReference` to `Harness.Common` — so `dotnet test -c Release` aborted on any non-Windows host with *"Could not find 'dotnet' host for the 'X64' architecture"*. A RID belongs to `dotnet publish`, not `dotnet build`. `SelfContained`, `PublishSingleFile` and compression stay in the props file, since they are publish-only and have no build effect. |
+| §2 Two payload ZIPs (PACS / NLDR) | **Now built in CI** *(2026-08-29)* | `.github/workflows/ci.yml` runs `publish-win-x64.ps1 -CreateZip` on a Windows runner, uploads both ZIPs as artefacts, and prints their sizes each run. Still open: `harness/packaging/installer-manifest-stub.yaml` carries `sha256: PLACEHOLDER_COMPUTED_BY_CI` and nothing yet writes the real hashes back — that belongs with the media pipeline (tasks.md W6). |
+| §3 Service map with dependency ordering | **Built** | `harness/packaging/service-map.yaml` exists and `HarnessServiceMapLoader` parses it |
+| §4 Configuration generation from `.epcfg` | **Not reachable** | `HarnessConfigGenerator` is implemented, but nothing calls it: `Installer.CLI` never loads the `.epcfg` and there is no composition root (tasks.md F1) |
+| §5 Demo mode (`--demo`) | **Not built** | The flag is parsed and printed. No second schema is created, no NLDR payload is extracted, no service is registered. |
+
+The claim *"The installer's `ServiceOrchestrator` already supports this shape — no code changes
+needed"* is correct as far as it goes, but incomplete: the orchestrator consumes a
+`IReadOnlyList<ServiceMapEntry>`, and **the only producer of that list is
+`HarnessServiceMapLoader`**. The canonical `samples/service-map.yaml` has no loader at all.
+See tasks.md gap **F2**.
+
+## Standing caution about scope
+
+This ADR is written as though the harness is a deployable. It is not, and should not become
+one. `harness/src/Pacs.Fas.Api` is a 435-line stand-in for `l3_FAS`; `harness/src/Pacs.Loans.Api`
+is nine lines. They exist to exercise the chassis before the real stack is pointed at it — which
+is a sound way to build a framework — but installing them onto a node that also runs the real
+ePACS would put a simulated FAS and a real FAS on the same machine.
+
+**Recommendation:** keep §1 and §3 (they are how any payload gets packaged and described).
+Re-scope §2 and §5 from "install the harness at pilot sites" to "install the harness in a lab,
+under an explicitly separate mode that refuses to run where a real installation is detected."

@@ -45,9 +45,7 @@ public sealed class HarnessConfigGenerator : IHarnessConfigGenerator
         bool demoMode = false,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation(
-            "Generating harness config for PACS {PacsId} (demo={Demo}) at {Path}.",
-            siteConfig.PacsId, demoMode, outputPath);
+        LogEvents.HarnessConfigGenerating(_logger, siteConfig.PacsId, demoMode, outputPath);
 
         var config = BuildConfigDocument(siteConfig, demoMode);
         var json = config.ToJsonString(WriteOptions);
@@ -64,7 +62,7 @@ public sealed class HarnessConfigGenerator : IHarnessConfigGenerator
         await File.WriteAllTextAsync(tempPath, json, cancellationToken);
         File.Move(tempPath, outputPath, overwrite: true);
 
-        _logger.LogInformation("Harness config generated successfully at {Path}.", outputPath);
+        LogEvents.HarnessConfigGenerated(_logger, outputPath);
     }
 
     private JsonObject BuildConfigDocument(SiteConfigPack siteConfig, bool demoMode)

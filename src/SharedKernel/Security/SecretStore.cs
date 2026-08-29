@@ -63,7 +63,7 @@ public sealed partial class SecretStore : ISecretStore
         secrets[key] = value;
         await SaveSecretsAsync(secrets, cancellationToken);
 
-        _logger.LogInformation("Secret stored: {Key}.", key);
+        LogSecretStored(_logger, key);
     }
 
     public async Task<string?> RetrieveAsync(string key, CancellationToken cancellationToken = default)
@@ -76,7 +76,7 @@ public sealed partial class SecretStore : ISecretStore
     {
         var newValue = GeneratePassword();
         await StoreAsync(key, newValue, cancellationToken);
-        _logger.LogInformation("Secret rotated: {Key}.", key);
+        LogSecretRotated(_logger, key);
         return newValue;
     }
 
@@ -181,4 +181,14 @@ public sealed partial class SecretStore : ISecretStore
 
     [GeneratedRegex(@"(?i)(password|secret|private_key|connection_string|api_key|token)\s*[=:]\s*[""']?[^\s""']{8,}", RegexOptions.Compiled)]
     private static partial Regex AnySecretPattern();
+
+    // Source-generated logging. CA1873 flags the ILogger extension overloads because the
+    // params object[] and the boxing of each argument are paid whether or not the level is
+    // enabled. The generator emits an IsEnabled guard around the formatting, so the cost is
+    // only paid when the message is actually written.
+    [LoggerMessage(EventId = 2801, Level = LogLevel.Information, Message = "Secret stored: {Key}.")]
+    private static partial void LogSecretStored(ILogger logger, string key);
+
+    [LoggerMessage(EventId = 2802, Level = LogLevel.Information, Message = "Secret rotated: {Key}.")]
+    private static partial void LogSecretRotated(ILogger logger, string key);
 }

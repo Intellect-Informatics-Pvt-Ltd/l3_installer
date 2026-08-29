@@ -27,7 +27,7 @@ public sealed class PayloadExtractor : IPayloadExtractor
         var payloads = manifest.Payloads.OrderBy(p => p.InstallOrder).ToList();
         var total = payloads.Count;
 
-        _logger.LogInformation("Extracting {Count} payloads to {StagingDir}.", total, stagingDirectory);
+        LogEvents.ExtractionStarting(_logger, total, stagingDirectory);
 
         if (!Directory.Exists(stagingDirectory))
         {
@@ -47,7 +47,7 @@ public sealed class PayloadExtractor : IPayloadExtractor
             // Skip already-extracted payloads (resume support)
             if (completedPayloads.Contains(payload.Name))
             {
-                _logger.LogInformation("Payload {Name} already extracted. Skipping.", payload.Name);
+                LogEvents.PayloadAlreadyExtracted(_logger, payload.Name);
                 progress?.Invoke(i + 1, total, payload.Name);
                 continue;
             }
@@ -55,8 +55,7 @@ public sealed class PayloadExtractor : IPayloadExtractor
             var sourcePath = Path.Combine(sourceDirectory, payload.File);
             var targetDir = Path.Combine(stagingDirectory, payload.Name);
 
-            _logger.LogInformation("Extracting payload {Index}/{Total}: {Name} ({File}).",
-                i + 1, total, payload.Name, payload.File);
+            LogEvents.ExtractingPayload(_logger, i + 1, total, payload.Name, payload.File);
 
             await ExtractPayloadAsync(sourcePath, targetDir, cancellationToken);
 
@@ -67,7 +66,7 @@ public sealed class PayloadExtractor : IPayloadExtractor
             progress?.Invoke(i + 1, total, payload.Name);
         }
 
-        _logger.LogInformation("All {Count} payloads extracted successfully.", total);
+        LogEvents.ExtractionComplete(_logger, total);
     }
 
     private static async Task ExtractPayloadAsync(string sourcePath, string targetDir, CancellationToken ct)

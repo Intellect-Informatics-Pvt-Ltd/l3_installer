@@ -1,0 +1,57 @@
+<Project>
+  <!--
+    Central Package Management for the installer solution.
+
+    WHY THIS EXISTS. Before 2026-08-29 every version lived in its own csproj, and they had
+    already drifted: Microsoft.NET.Test.Sdk was 17.6.0 here and 17.10.0 in harness/, xunit was
+    2.4.2 here and 2.9.0 there. Version drift inside one product is how a package upgrade fixes
+    a bug in one project and leaves it live in the next, and it is invisible in review because
+    nobody diffs nine csproj files against each other. One file, one version, reviewable.
+
+    OFFLINE DISCIPLINE. Every version below is present in the estate's package cache, so a
+    restore on a disconnected build host succeeds. Do not bump a version without confirming it
+    is mirrored - "it restored on my machine" is exactly the failure this product cannot ship.
+  -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <!-- ── Microsoft / .NET 10 ───────────────────────────────────────────────
+       Kept on the same band as the L2-R2 payload (net10.0). A framework that
+       hosts .NET 10 services on an offline node should not itself drag a
+       second runtime band onto that node. -->
+  <ItemGroup>
+    <PackageVersion Include="Microsoft.Extensions.Hosting"              Version="10.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Http"                 Version="10.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Options"              Version="10.0.0" />
+  </ItemGroup>
+
+  <!-- ── Security ──────────────────────────────────────────────────────────
+       SignedCms / detached CMS verification of the release manifest. This is
+       currently the ONLY tamper-evidence mechanism in force (Authenticode
+       verification is unimplemented - see ADR-0001), so treat this package's
+       version as security-relevant, not incidental. -->
+  <ItemGroup>
+    <PackageVersion Include="System.Security.Cryptography.Pkcs"         Version="10.0.0" />
+  </ItemGroup>
+
+  <!-- ── Serialisation ─────────────────────────────────────────────────────
+       Release manifests and service maps. -->
+  <ItemGroup>
+    <PackageVersion Include="YamlDotNet"                                Version="16.3.0" />
+  </ItemGroup>
+
+  <!-- ── Testing ───────────────────────────────────────────────────────────
+       FluentAssertions is deliberately held at 6.x: 7.0 moved to a commercial
+       licence. Do not "upgrade" it without a licence decision. -->
+  <ItemGroup>
+    <PackageVersion Include="Microsoft.NET.Test.Sdk"                    Version="17.14.1" />
+    <PackageVersion Include="xunit"                                     Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio"                 Version="2.8.2" />
+    <PackageVersion Include="FluentAssertions"                          Version="6.12.2" />
+    <PackageVersion Include="Moq"                                       Version="4.20.72" />
+    <PackageVersion Include="coverlet.collector"                        Version="6.0.4" />
+  </ItemGroup>
+</Project>

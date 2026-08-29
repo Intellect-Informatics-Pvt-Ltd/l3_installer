@@ -1,0 +1,19 @@
+<Project>
+  <!--
+    Test projects are never a payload, so they are never published.
+
+    This lives in Directory.Build.targets rather than Directory.Build.props because
+    Directory.Build.props is imported at the TOP of every csproj - before the project's own
+    PropertyGroup runs - so $(IsTestProject) is still empty there and a guard written in the
+    props file silently has no effect. Directory.Build.targets is imported at the BOTTOM,
+    after the project body and after Microsoft.NET.Test.Sdk, so the flag is set by then.
+
+    The win-x64 RuntimeIdentifier that used to force these projects to build as Windows
+    binaries is no longer set at build time at all; see the note in Directory.Build.props.
+  -->
+  <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
+    <IsPublishable>false</IsPublishable>
+    <SelfContained>false</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+  </PropertyGroup>
+</Project>

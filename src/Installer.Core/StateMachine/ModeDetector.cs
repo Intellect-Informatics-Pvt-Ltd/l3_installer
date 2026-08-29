@@ -41,8 +41,7 @@ public sealed class ModeDetector
             return InstallerMode.Install;
         }
 
-        _logger.LogInformation("Existing installation detected at {Path}. Mode: Upgrade.",
-            _options.Value.CurrentJunctionPath);
+        LogEvents.ExistingInstallationDetected(_logger, _options.Value.CurrentJunctionPath);
         return InstallerMode.Upgrade;
     }
 
@@ -108,6 +107,6 @@ public sealed class ModeDetector
                     "Cannot uninstall — no existing ePACS installation found.");
         }
 
-        _logger.LogInformation("Requested mode {Mode} validated against installation state.", mode);
+        LogEvents.RequestedModeValidated(_logger, mode);
     }
 }

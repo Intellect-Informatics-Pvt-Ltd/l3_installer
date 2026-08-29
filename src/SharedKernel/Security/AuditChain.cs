@@ -12,7 +12,7 @@ namespace SharedKernel.Security;
 /// Each entry includes the hash of the previous entry, creating a tamper-evident chain.
 /// Stored as JSON lines in D:\ePACSData\installer\audit-chain.jsonl.
 /// </summary>
-public sealed class AuditChain : IAuditChain
+public sealed partial class AuditChain : IAuditChain
 {
     private readonly IOptions<InstallerOptions> _options;
     private readonly ILogger<AuditChain> _logger;
@@ -60,8 +60,7 @@ public sealed class AuditChain : IAuditChain
 
         _lastHash = chainedEntry.EntryHash;
 
-        _logger.LogInformation("Audit chain entry #{Sequence}: {EventType} by {Actor}.",
-            sequence, entry.EventType, entry.Actor);
+        LogChainEntry(_logger, sequence, entry.EventType, entry.Actor);
 
         return chainedEntry;
     }
@@ -130,7 +129,7 @@ public sealed class AuditChain : IAuditChain
             verified++;
         }
 
-        _logger.LogInformation("Audit chain verified: {Verified} entries, integrity intact.", verified);
+        LogChainVerified(_logger, verified);
         return new ChainVerificationResult { Valid = true, TotalEntries = verified, VerifiedEntries = verified };
     }
 
@@ -180,4 +179,13 @@ public sealed class AuditChain : IAuditChain
         var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(input));
         return Convert.ToHexString(hashBytes).ToLowerInvariant();
     }
+
+    // Source-generated logging — see the note in SecretStore.cs for why (CA1873).
+    [LoggerMessage(EventId = 2701, Level = LogLevel.Information,
+        Message = "Audit chain entry #{Sequence}: {EventType} by {Actor}.")]
+    private static partial void LogChainEntry(ILogger logger, long sequence, string eventType, string actor);
+
+    [LoggerMessage(EventId = 2702, Level = LogLevel.Information,
+        Message = "Audit chain verified: {Verified} entries, integrity intact.")]
+    private static partial void LogChainVerified(ILogger logger, int verified);
 }

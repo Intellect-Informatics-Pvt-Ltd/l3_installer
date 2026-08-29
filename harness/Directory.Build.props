@@ -1,12 +1,19 @@
 <Project>
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <!-- Pinned deliberately, NOT `latest-recommended`. With `latest`, the analyser set is
+         chosen by whichever SDK happens to be installed, so the same commit can build clean on
+         one machine and fail on another; `TreatWarningsAsErrors` turns that difference into a
+         broken build rather than a diff in warning counts. Tying the level to the
+         TargetFramework means the analyser set moves when the code moves - as a decision, in a
+         reviewable commit - and never as a side effect of the build agent. Raise this in the
+         same commit that raises the TargetFramework, and clear the new diagnostics then. -->
+    <AnalysisLevel>10.0-recommended</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-    <LangVersion>12</LangVersion>
+    <LangVersion>14.0</LangVersion>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -24,8 +31,28 @@
        Library projects (Harness.Common, Harness.ScenarioPlayer) are excluded via
        the IsPublishable=false condition below.
        ═══════════════════════════════════════════════════════════════════════════ -->
+  <!--
+    RuntimeIdentifier is deliberately NOT set here (changed 2026-08-29). It used to be, under
+    a plain `Configuration == Release` condition, which made every Release BUILD produce
+    win-x64 output - including test projects, which inherit the RID through their
+    ProjectReference to Harness.Common. The visible symptom was that `dotnet test -c Release`
+    aborted on any non-Windows host with
+
+        Could not find 'dotnet' host for the 'X64' architecture.
+
+    so the harness tests could only be run in Release on Windows, and the Linux leg of CI
+    would have failed on its first run.
+
+    A RID belongs to `dotnet publish`, not to `dotnet build`: a build should be
+    platform-neutral and a publish should be platform-targeted. The RID is now passed by the
+    two things that actually produce a payload - `harness/scripts/publish-win-x64.ps1` and the
+    publish job in `.github/workflows/ci.yml` - both with `-r win-x64`.
+
+    The properties below are publish-only and have no effect on a build, so they stay here:
+    that keeps ADR-0007 §1's intent (one place describes how the payload is shaped) without
+    making every Release build Windows-specific.
+  -->
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
     <PublishTrimmed>false</PublishTrimmed>

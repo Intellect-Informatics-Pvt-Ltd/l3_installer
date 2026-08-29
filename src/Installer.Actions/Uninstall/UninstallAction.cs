@@ -52,7 +52,7 @@ public sealed class UninstallAction
         var binaryRoot = _options.Value.BinaryRoot;
         var dataRoot = _options.Value.DataRoot;
 
-        _logger.LogInformation("Starting uninstall. PurgeData: {PurgeData}.", purgeData);
+        LogEvents.UninstallStarting(_logger, purgeData);
 
         // Step 1: Stop all services
         _logger.LogInformation("Stopping all ePACS services...");
@@ -63,7 +63,7 @@ public sealed class UninstallAction
         await _serviceOrchestrator.DeregisterAllAsync(services, cancellationToken);
 
         // Step 3: Remove binaries
-        _logger.LogInformation("Removing binaries from {BinaryRoot}.", binaryRoot);
+        LogEvents.RemovingBinaries(_logger, binaryRoot);
         if (Directory.Exists(binaryRoot))
         {
             Directory.Delete(binaryRoot, recursive: true);
@@ -77,9 +77,7 @@ public sealed class UninstallAction
         }
         else
         {
-            _logger.LogInformation(
-                "Data preserved at {DataRoot}. To purge, re-run with override token and typed confirmation.",
-                dataRoot);
+            LogEvents.DataPreserved(_logger, dataRoot);
         }
 
         _logger.LogInformation("Uninstall complete.");

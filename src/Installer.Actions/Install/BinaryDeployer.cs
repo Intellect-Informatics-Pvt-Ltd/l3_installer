@@ -24,7 +24,7 @@ public sealed class BinaryDeployer : IBinaryDeployer
         var releasesPath = _options.Value.ReleasesPath;
         var versionPath = Path.Combine(releasesPath, version);
 
-        _logger.LogInformation("Deploying version {Version} to {Path}.", version, versionPath);
+        LogEvents.DeployingVersion(_logger, version, versionPath);
 
         // Ensure releases directory exists
         if (!Directory.Exists(releasesPath))
@@ -42,7 +42,7 @@ public sealed class BinaryDeployer : IBinaryDeployer
         // Copy staging to release directory
         await Task.Run(() => CopyDirectory(stagingDirectory, versionPath), cancellationToken);
 
-        _logger.LogInformation("Binaries deployed to {Path}.", versionPath);
+        LogEvents.BinariesDeployed(_logger, versionPath);
 
         // Create/update the 'current' junction
         await SwitchCurrentAsync(version);
@@ -58,7 +58,7 @@ public sealed class BinaryDeployer : IBinaryDeployer
             throw new DirectoryNotFoundException($"Release directory not found: {targetPath}");
         }
 
-        _logger.LogInformation("Switching 'current' junction to version {Version}.", version);
+        LogEvents.SwitchingJunction(_logger, version);
 
         // Remove existing junction if present
         if (Directory.Exists(junctionPath))
@@ -70,7 +70,7 @@ public sealed class BinaryDeployer : IBinaryDeployer
         // Create directory junction (symlink on non-Windows for dev/test)
         Directory.CreateSymbolicLink(junctionPath, targetPath);
 
-        _logger.LogInformation("Junction '{Junction}' now points to '{Target}'.", junctionPath, targetPath);
+        LogEvents.JunctionSwitched(_logger, junctionPath, targetPath);
         return Task.CompletedTask;
     }
 

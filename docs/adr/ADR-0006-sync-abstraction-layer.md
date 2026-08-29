@@ -50,3 +50,31 @@ Use the **transactional outbox pattern** with Kafka as the transport layer.
 - The `SyncWorker` is a critical service — must be monitored and auto-restarted
 - Sequence allocation adds one extra UPDATE per transaction (acceptable overhead)
 - The outbox table grows until ACKed rows are archived (90-day retention default)
+
+---
+
+## Implementation status (audited 2026-08-29)
+
+**Interfaces only.** `ISyncTransport` and `IReconciliationEngine` have **zero implementing
+types**. `OutboxRelay`, `InboxProcessor` and `SyncAgentWorker` exist as shells whose bodies are
+TODO comments. What is genuinely built is the connectivity state machine and the circuit
+breaker (`Sync.Agent/Connectivity/`), which are real and reusable.
+
+## The question that comes before any further work here
+
+**The NLDR counterparty does not exist.** "NLDR" appears in no file anywhere in the L2-R2
+estate outside this repository — not in code, not in configuration, not in the schema, not in
+the deployment tooling. L2-R2 does have a transactional outbox (`OutboxMessages`, defined in
+`db/stable_baseline_ddl.sql` and owned by FAS), but it publishes to Kafka for *intra-node*
+orchestration between modules. There is no central receiver and no state-level ingest.
+
+So this ADR describes one half of a protocol whose other half is not on anyone's roadmap that
+these repositories record. Before more effort goes in, someone must answer:
+
+1. Is there an NLDR programme, and on what timeline?
+2. If yes — who owns the receiving side, and does it accept this envelope?
+3. If no — this phase should be flagged off and `harness/Harness.Common` (envelope, canonical
+   JSON, payload hashing, sequencing — the genuinely good, genuinely tested part) kept as a
+   protocol rig, so the design survives without the maintenance cost of half an unbuilt system.
+
+Until that is answered, treat Phase 3 of `tasks.md` as **on hold**, not as behind schedule.

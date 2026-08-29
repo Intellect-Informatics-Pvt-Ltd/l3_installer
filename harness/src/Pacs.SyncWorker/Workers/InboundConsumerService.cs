@@ -95,9 +95,7 @@ public sealed class InboundConsumerService(
         await tx.CommitAsync(ct);
         await faultInjector.FireAsync(FaultHook.AfterAckUpdate, ct);
 
-        logger.LogInformation(
-            "[InboundConsumer] ACK processed: eventId={EventId} status={Status} seq={Seq}",
-            ack.EventId, ack.AckStatus, ack.SequenceNo);
+        LogEvents.AckProcessed(logger, ack.EventId, ack.AckStatus, ack.SequenceNo);
     }
 
     private IConsumer<string, string> BuildConsumer()
@@ -111,8 +109,7 @@ public sealed class InboundConsumerService(
         };
         var c = new ConsumerBuilder<string, string>(config).Build();
         c.Subscribe(new[] { syncOpts.Value.AcksTopic, syncOpts.Value.CommandsTopic });
-        logger.LogInformation("[InboundConsumer] Subscribed to {Acks}, {Cmds}",
-            syncOpts.Value.AcksTopic, syncOpts.Value.CommandsTopic);
+        LogEvents.SubscribedToTopics(logger, syncOpts.Value.AcksTopic, syncOpts.Value.CommandsTopic);
         return c;
     }
 

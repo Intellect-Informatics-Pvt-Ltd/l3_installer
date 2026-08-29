@@ -28,7 +28,7 @@ public sealed class DataRootInitializer : IDataRootInitializer
     public Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         var dataRoot = _installerOptions.Value.DataRoot;
-        _logger.LogInformation("Initializing data root at {DataRoot}.", dataRoot);
+        LogEvents.InitializingDataRoot(_logger, dataRoot);
 
         var directories = GetRequiredDirectories(dataRoot);
 
@@ -39,19 +39,19 @@ public sealed class DataRootInitializer : IDataRootInitializer
             if (!Directory.Exists(dir))
             {
                 Directory.CreateDirectory(dir);
-                _logger.LogInformation("Created directory: {Directory}.", dir);
+                LogEvents.DirectoryCreated(_logger, dir);
             }
             else
             {
-                _logger.LogInformation("Directory already exists: {Directory}.", dir);
+                LogEvents.DirectoryAlreadyExists(_logger, dir);
             }
         }
 
-        _logger.LogInformation("Data root initialization complete. Created {Count} directories.", directories.Count);
+        LogEvents.DataRootReady(_logger, directories.Count);
         return Task.CompletedTask;
     }
 
-    private List<string> GetRequiredDirectories(string dataRoot)
+    private static List<string> GetRequiredDirectories(string dataRoot)
     {
         return
         [

@@ -1,6 +1,11 @@
 #pragma warning disable CA1716 // Rename 'Error' — kept for parity with Intellect.Erp.Observability contract
 #pragma warning disable CA1848 // Use LoggerMessage delegates — not needed for a thin adapter shim
 #pragma warning disable CA2254 // Template should not vary — intentional pass-through
+#pragma warning disable CA1873 // Expensive log argument — this is a pass-through adapter: the
+                               // template and its arguments are supplied by the caller at run
+                               // time, so neither source generation nor an IsEnabled guard can
+                               // be applied here. The cost belongs to the call site, and the
+                               // call sites are covered by the analyser in their own projects.
 using Microsoft.Extensions.Logging;
 
 namespace Harness.Common.Observability;
@@ -63,4 +68,5 @@ public sealed class DefaultAppLogger<T>(ILogger<T> inner) : IAppLogger<T>
 }
 #pragma warning restore CA1716
 #pragma warning restore CA1848
+#pragma warning restore CA1873
 #pragma warning restore CA2254

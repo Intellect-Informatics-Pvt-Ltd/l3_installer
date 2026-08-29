@@ -7,6 +7,9 @@
   -->
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- Required so the SSH.NET pin below actually takes effect: without transitive pinning,
+         a PackageVersion for a package nothing references directly is simply ignored. -->
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
 
   <!-- ── Microsoft / .NET ──────────────────────────────────────── -->
@@ -20,7 +23,6 @@
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Binder"      Version="8.0.2" />
-    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="8.0.14" />
     <PackageVersion Include="Microsoft.AspNetCore.Diagnostics.HealthChecks" Version="2.2.0" />
     <PackageVersion Include="AspNetCore.HealthChecks.MySql"                 Version="8.0.1" />
     <PackageVersion Include="AspNetCore.HealthChecks.Redis"                 Version="8.0.1" />
@@ -54,7 +56,6 @@
 
   <!-- ── Serialisation ─────────────────────────────────────────── -->
   <ItemGroup>
-    <PackageVersion Include="System.Text.Json"                        Version="8.0.5" />
   </ItemGroup>
 
   <!-- ── Testing ───────────────────────────────────────────────── -->
@@ -69,6 +70,28 @@
     <PackageVersion Include="Testcontainers.Kafka"                    Version="3.9.0" />
     <PackageVersion Include="Testcontainers.MySql"                    Version="3.9.0" />
     <PackageVersion Include="Testcontainers.Redis"                    Version="3.9.0" />
+
+    <!-- SECURITY PIN, not a preference. Testcontainers 3.9.0 pulls SSH.NET transitively, and
+         every SSH.NET release up to and including 2025.1.0 carries GHSA-q939-rpr3-3284 (HIGH):
+         ScpClient recursive download allows arbitrary file write via server-controlled SCP
+         filenames. The advisory's first patched version is 2026.0.0, so that is the floor.
+
+         NuGet.Config sets auditMode=all / auditLevel=high, so this surfaces as NU1903 and,
+         with TreatWarningsAsErrors, fails the build - which is exactly the behaviour we want
+         for a product delivered on removable media to sites with no patch channel.
+
+         Pinned transitively rather than fixed by moving to Testcontainers 4.x, because
+         Testcontainers.Kafka has no 4.x release in the estate's package mirror and an upgrade
+         that cannot restore offline is not an upgrade for this product.
+
+         ACTION FOR THE MIRROR: SSH.NET 2026.0.0 must be added to the offline feed. Unlike
+         every other version in this file it is not yet cached, and a disconnected build host
+         will fail to restore until it is. That is the correct failure - do not "fix" it by
+         lowering this pin.
+
+         DO NOT lower this version. If a Testcontainers upgrade later makes the pin redundant,
+         remove it in the same commit and confirm `dotnet restore` reports no NU1903. -->
+    <PackageVersion Include="SSH.NET"                                 Version="2026.0.0" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing"        Version="8.0.14" />
   </ItemGroup>
 </Project>

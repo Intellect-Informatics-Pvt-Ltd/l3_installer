@@ -102,9 +102,7 @@ public sealed class OutboundRelayService(
                     """;
                 await updateConn.ExecuteAsync(ackSql, new { id = row.OutboxId });
 
-                logger.LogInformation(
-                    "[OutboundRelay] Published seq={Seq} eventId={EventId}",
-                    row.SequenceNo, row.EventId);
+                LogEvents.EnvelopePublished(logger, row.SequenceNo, row.EventId);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

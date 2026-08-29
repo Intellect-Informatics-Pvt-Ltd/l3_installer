@@ -73,9 +73,7 @@ public sealed class InstallerStateMachine : IInstallerStateMachine
 
         await PersistCheckpointAsync(cancellationToken);
 
-        _logger.LogInformation(
-            "State transition: {PreviousPhase} → {NextPhase} (SubPhase: {SubPhase}, Mode: {Mode})",
-            previousPhase, nextPhase, subPhase ?? "none", _currentState.Mode);
+        LogEvents.StateTransition(_logger, previousPhase, nextPhase, subPhase ?? "none", _currentState.Mode);
     }
 
     /// <inheritdoc />
@@ -103,8 +101,7 @@ public sealed class InstallerStateMachine : IInstallerStateMachine
             // If previous run completed successfully or failed, no recovery needed
             if (savedState.Phase is InstallerPhase.Success or InstallerPhase.Failed)
             {
-                _logger.LogInformation(
-                    "Previous run ended in {Phase}. No recovery needed.", savedState.Phase);
+                LogEvents.NoRecoveryNeeded(_logger, savedState.Phase);
                 return null;
             }
 

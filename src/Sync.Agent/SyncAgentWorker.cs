@@ -61,9 +61,7 @@ public sealed class SyncAgentWorker : BackgroundService
                 else
                 {
                     var pending = await _outboxRelay.GetPendingCountAsync(stoppingToken);
-                    _logger.LogInformation(
-                        "NLDR disconnected. Pending outbox events: {Count}. Business operations unaffected.",
-                        pending);
+                    LogEvents.NldrDisconnected(_logger, pending);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

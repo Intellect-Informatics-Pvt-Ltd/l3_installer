@@ -1,251 +1,281 @@
-# Tasks: ePACS Offline Installer — Phase 0 + Phase 1
+# Tasks: ePACS Offline Installer
+
+> **STATUS AUDITED 2026-08-29.** Every item below was re-checked against the code by locating
+> the named type or file. Items previously marked `[x]` against code that does not exist have
+> been corrected. **Do not re-tick an item without the artefact named in its evidence note.**
+>
+> **What this repository is.** An installer *framework* — a payload-agnostic chassis for
+> installing a bundled ePACS stack (application + MySQL + cache + eventing) onto an offline
+> Windows PACS node, with the database inside the bundle so no untrusted database sits outside
+> the installation. `harness/` is a deliberate stand-in payload used to exercise the chassis
+> before the real L2-R2 stack is pointed at it. It is **not** the product and must not ship to
+> a node that runs the product.
+>
+> **Legend**
+> - `[x]` — implemented; the named artefact exists and does the job
+> - `[~]` — **partial**; the artefact exists but does not yet do the job (evidence note says how)
+> - `[ ]` — **not implemented**; no code exists
+>
+> **Framework maturity:** ~8,900 LOC, **38 installer tests + 16 harness contract tests**, 0
+> integration tests. Verification, state machine, prechecks, service orchestration, topology
+> loading and binary deployment are real. The composition root, the payload bundling, the
+> database bootstrap, and the upgrade/restore/repair engines are not.
+>
+> **Technology baseline (2026-08-29):** aligned to `r2-dev-stable`. **.NET 10** (`net10.0`, SDK
+> pinned 10.0.302 via `global.json` — the same pin as the L2-R2 workspace), central package
+> management, CI on Linux + Windows. Still to align, and blocked on the runtime-target
+> decision: MySQL 8.4 with `lower_case_table_names=0`, Redis rather than Garnet (ADR-0002), and
+> Kafka as a conditional payload rather than a mandatory 290 MB (ADR-0003).
+
+---
+
+## The four framework gaps that block the stated intent
+
+These are not individual tasks — they are the structural items that decide whether the chassis
+can accept the L2-R2 stack. Each is expanded in the phases below.
+
+| # | Gap | Why it blocks the intent | Task refs |
+|---|---|---|---|
+| **F1** | **No composition root.** `Installer.CLI/Program.cs:37` is `// TODO: Wire up full installer pipeline with DI`. Nine libraries, nothing assembles them. | The framework has never executed end-to-end, so no claim below has been proven at runtime. | 12.x |
+| **F2** | **No loader for the canonical service map.** `samples/service-map.yaml` has no parser. The only loader is `HarnessServiceMapLoader` — a hand-rolled, line-based parser bound to the harness's `group:` filtering, while `ManifestVerifier` already depends on YamlDotNet. | The chassis cannot read its own topology file, so it cannot be pointed at a 26-service stack without new code. | 8.6, 8.7 |
+| **F3** | **No database bootstrap.** Nothing runs `mysqld --initialize`, writes `my.ini`, sets the root password, or creates the `healthcheck` user that `samples/service-map.yaml` pings. `BackupEngine.BackupDatabaseAsync` writes a text file that says "MySQL dump placeholder". | "Bundle the DB so nothing sits outside and nothing gets tampered with" is the reason this framework exists, and it is the part with no implementation. | 8.x (new 8.11), 15.2 |
+| **F4** | **No config templates.** `ConfigGenerator` scans for `*.template.*`; **no such file exists in the repository**. `ServicesOptions` is a fixed six-property class (MySql, Cache, Eventing, Web, Sync, Agent) with no collection, so it cannot describe N application services. | Site-specific configuration generation is implemented but inert, and cannot express a multi-service payload. | 2.3, 2.8, 8.5 |
+
+---
 
 ## Phase 0: Repository Scaffolding & Architecture Foundation
 
 - [x] 1. Create solution structure and project scaffolding
-  - [x] 1.1 Create .NET 8 solution with all projects (Installer.Core, Installer.Actions, Installer.Agent, Installer.CLI, SharedKernel, ManifestVerifier, SupportBundle, BackupRestore)
-  - [x] 1.2 Create packaging directory structure (wix, payloads, config-templates, scripts, error-catalog)
-  - [x] 1.3 Create tests directory structure (UnitTests, IntegrationTests)
-  - [x] 1.4 Create samples directory with release-manifest.yaml, service-map.yaml, site-config-pack.epcfg
+  - [x] 1.1 Create the solution with all projects — 10 src projects + 2 test projects exist *(created on .NET 8; retargeted to net10.0 on 2026-08-29 — see X2)*
+  - [~] 1.2 Create packaging directory structure — **only `config-templates/` and `error-catalog/` exist. No `wix/`, no `payloads/`, no `scripts/`.**
+  - [x] 1.3 Create tests directory structure
+  - [x] 1.4 Create samples directory (release-manifest.yaml, service-map.yaml, site-config-pack.epcfg)
   - [x] 1.5 Create docs directory with ADR folder structure
-  - [x] 1.6 Create AGENTS.md file for cross-platform AI agent guidance
-  - [x] 1.7 Create README.md with build instructions and architecture overview
+  - [x] 1.6 Create AGENTS.md
+  - [x] 1.7 Create README.md — *exists; corrected 2026-08-29 to describe what is built*
 
-- [x] 2. Define configuration models and appsettings schema
-  - [x] 2.1 Create InstallerOptions configuration model (DataRoot, BinaryRoot, TempRoot, StateFile paths)
-  - [x] 2.2 Create PrecheckOptions configuration model (all thresholds configurable)
-  - [x] 2.3 Create ServicesOptions configuration model (ports, data directories per service)
-  - [x] 2.4 Create MonitoringOptions configuration model (intervals, thresholds, failure counts)
-  - [x] 2.5 Create BackupOptions configuration model (targets, schedule, retention, encryption)
-  - [x] 2.6 Create LogRotationOptions configuration model (retention days, compression, max volume)
-  - [x] 2.7 Create appsettings.json with all defaults and appsettings.Production.json template
-  - [x] 2.8 Create appsettings.template.json for installer-generated site-specific config
+- [~] 2. Define configuration models and appsettings schema
+  - [x] 2.1 InstallerOptions (DataRoot, BinaryRoot, TempRoot, StateFile)
+  - [x] 2.2 PrecheckOptions
+  - [~] 2.3 ServicesOptions — **fixed six-property shape. No collection of application services, so a payload with N services cannot be described. See F4.**
+  - [x] 2.4 MonitoringOptions
+  - [x] 2.5 BackupOptions
+  - [x] 2.6 LogRotationOptions
+  - [x] 2.7 appsettings.json + appsettings.Production.json
+  - [ ] 2.8 appsettings.template.json — **no `*.template.*` file exists anywhere in the repo. `ConfigGenerator` therefore has nothing to act on. See F4.**
 
 - [x] 3. Define core data contracts
-  - [x] 3.1 Create ReleaseManifest model (manifest_id, stack_version, schema_version, payloads with SHA-256)
-  - [x] 3.2 Create SiteConfigPack model (.epcfg schema with signature, pacs_id, all configurable fields)
-  - [x] 3.3 Create ServiceMap model (service definitions with start/stop order, health checks, recovery)
-  - [x] 3.4 Create InstallationState model (state machine checkpoint for power-cut recovery)
-  - [x] 3.5 Create HealthCheckResult model (service name, status, consecutive failures, timestamp)
+  - [x] 3.1 ReleaseManifest · [x] 3.2 SiteConfigPack · [x] 3.3 ServiceMap · [x] 3.4 InstallationState · [x] 3.5 HealthCheckResult
 
-- [x] 4. Create error catalog and error handling infrastructure
-  - [x] 4.1 Create config/error-catalog/installer.yaml with all ERP-INST-* error codes (PRE, INS, MIG, BAK, SYN, HLT)
-  - [x] 4.2 Create config/error-catalog/core.yaml with ERP-CORE-* base error codes
-  - [x] 4.3 Wire IErrorFactory and IErrorCatalog in DI registration
-  - [x] 4.4 Create InstallerException subclasses (PrecheckException, InstallException, MigrationException, etc.)
+- [~] 4. Create error catalog and error handling infrastructure
+  - [x] 4.1 `packaging/error-catalog/installer.yaml`
+  - [x] 4.2 `packaging/error-catalog/core.yaml`
+  - [ ] 4.3 Wire IErrorFactory and IErrorCatalog in DI — **`IInstallerErrorFactory` has no implementation, and there is no DI registration for the installer at all (F1).**
+  - [x] 4.4 InstallerException subclasses — six subclasses present
+
+---
 
 ## Phase 1: Installer Core — State Machine & Manifest Verification
 
-- [x] 5. Implement ManifestVerifier
-  - [x] 5.1 Implement release manifest YAML parser (deserialize to ReleaseManifest model)
-  - [x] 5.2 Implement Authenticode signature verification (SignedCms validation)
-  - [x] 5.3 Implement SHA-256 payload hash verification (per-file against manifest)
-  - [x] 5.4 Implement USB media integrity check (full archive hash before extraction)
-  - [x] 5.5 Write unit tests for manifest parsing, signature verification, and hash verification
+- [~] 5. Implement ManifestVerifier — *the strongest component in the repo*
+  - [x] 5.1 Release manifest YAML parser (YamlDotNet, underscored naming)
+  - [~] 5.2 Signature verification — **detached CMS/PKCS#7 is real and checks chain + thumbprint + timestamp. `VerifyAuthenticode()` returns `Failure("not yet implemented")` on every call, including on Windows.**
+  - [x] 5.3 SHA-256 payload hash verification, per file, against manifest
+  - [ ] 5.4 USB media integrity check (full archive hash before extraction) — **no caller computes an archive-level hash.**
+  - [x] 5.5 Unit tests — 15 facts across ManifestParserTests + HashVerifierTests
 
-- [x] 6. Implement Installer.Core state machine
-  - [x] 6.1 Define state enum (Load, Verify, Precheck, Install, Upgrade, Repair, Backup, Restore, Uninstall, Health, Smoke, Success, Failed, Recovery)
-  - [x] 6.2 Implement state machine with checkpoint persistence (write state.json with fsync on each transition)
-  - [x] 6.3 Implement recovery mode (detect incomplete state on startup, resume from checkpoint)
-  - [x] 6.4 Implement concurrent execution guard (named mutex Global\ePACSInstaller with stale PID detection)
-  - [x] 6.5 Implement mode detection (fresh install vs upgrade vs repair based on existing installation)
-  - [x] 6.6 Write unit tests for state transitions, checkpoint persistence, and recovery
+- [~] 6. Implement Installer.Core state machine
+  - [x] 6.1 State enum · [x] 6.2 Checkpoint persistence (fsync'd state.json) · [x] 6.3 Recovery mode
+  - [x] 6.4 Concurrent execution guard (`Global\` mutex, stale-PID detection)
+  - [x] 6.5 Mode detection (fresh/upgrade/repair from junction target)
+  - [ ] 6.6 Unit tests for state transitions, checkpoint persistence, recovery — **no state machine test file exists.**
 
-- [x] 7. Implement Installer.Actions — Precheck Suite
-  - [x] 7.1 Implement OS version check (min build from config)
-  - [x] 7.2 Implement disk space check (system + data volume, thresholds from config)
-  - [x] 7.3 Implement RAM check (min/recommended from config)
-  - [x] 7.4 Implement port availability check (ports from config)
-  - [x] 7.5 Implement admin rights check
-  - [x] 7.6 Implement pending reboot detection
-  - [x] 7.7 Implement AV exclusion detection (Windows Defender paths)
-  - [x] 7.8 Implement existing installation detection
-  - [x] 7.9 Implement .epcfg signature validation
-  - [x] 7.10 Implement temp staging relocation (if C: < threshold, use data volume)
-  - [x] 7.11 Write unit tests for each precheck with configurable thresholds
+- [~] 7. Implement Installer.Actions — Precheck Suite
+  - [x] 7.1 OS version · [x] 7.2 Disk space · [x] 7.3 RAM · [x] 7.4 Port availability · [x] 7.5 Admin rights · [x] 7.6 Pending reboot
+  - [ ] 7.7 AV exclusion detection — **no class.**
+  - [x] 7.8 Existing installation detection — implemented in `ModeDetector`, not as an `IPrecheck`
+  - [ ] 7.9 `.epcfg` signature validation — **`SiteConfigPack.Signature` is carried but never verified by anything.** This is a security gap, not just a missing feature: an unsigned site config is accepted today.
+  - [ ] 7.10 Temp staging relocation — **`ResolvedTempRoot` is a default path; there is no threshold check and no relocation.**
+  - [~] 7.11 Unit tests per precheck — **5 facts in `PrecheckRunnerTests`; the individual checks are not covered.**
 
-- [x] 8. Implement Installer.Actions — Fresh Install
-  - [x] 8.1 Implement data root creation (D:\ePACSData\ with subdirectories from config)
-  - [x] 8.2 Implement NTFS ACL application (per-service accounts, paths from config)
-  - [x] 8.3 Implement payload extraction (from verified archive to staging, resumable)
-  - [x] 8.4 Implement binary deployment (stage to releases\<ver>\, create current junction)
-  - [x] 8.5 Implement config generation from templates (token replacement from .epcfg + appsettings)
-  - [x] 8.6 Implement Windows service registration (from service-map.yaml, recovery actions)
-  - [x] 8.7 Implement service start in dependency order (from service-map.yaml start_order)
-  - [x] 8.8 Implement firewall rules (localhost-only for DB/cache/eventing ports from config)
-  - [x] 8.9 Implement Windows Update reboot suppression during operation
-  - [x] 8.10 Write integration tests for fresh install on clean environment
+- [~] 8. Implement Installer.Actions — Fresh Install
+  - [x] 8.1 Data root creation with subdirectories from config
+  - [ ] 8.2 NTFS ACL application — **`DataRootInitializer.cs:10` says "handled separately"; `IAclEngine` has no implementation.**
+  - [x] 8.3 Payload extraction, resumable via a progress manifest
+  - [x] 8.4 Binary deployment, side-by-side `releases/<ver>/` + `current` link — *note: the flip is delete-then-create, which is **not** the atomic commit the design claims; see 17.6*
+  - [~] 8.5 Config generation from templates — **`ConfigGenerator` is implemented and generic (token substitution, atomic write-then-rename), but no template file exists for it to process. Inert until 2.8.**
+  - [x] 8.6 Windows service registration from a service map, with recovery actions
+  - [x] 8.7 Service start in dependency order
+  - [ ] 8.8 Firewall rules — **`IFirewallManager` has no implementation.**
+  - [ ] 8.9 Windows Update reboot suppression — **no code.**
+  - [ ] 8.10 Integration tests for fresh install — **`Installer.IntegrationTests/UnitTest1.cs` is one placeholder fact.**
+  - [ ] **8.11 (NEW) Database bootstrap.** Initialize the bundled MySQL data directory, generate `my.ini` from configuration, set the root password from the generated secret, create the `healthcheck` user the service map's health check authenticates as, and impose the baseline schema. **See F3 — this is the core of the bundling intent and none of it exists.**
 
-- [x] 9. Implement Installer.Actions — Uninstall
-  - [x] 9.1 Implement service stop in reverse order (from service-map.yaml stop_order)
-  - [x] 9.2 Implement service deregistration
-  - [x] 9.3 Implement binary removal (C:\Program Files\ePACS\)
-  - [x] 9.4 Implement data preservation (D:\ePACSData\ kept by default)
-  - [x] 9.5 Implement governance token verification for data purge (Override Token JWT validation)
-  - [x] 9.6 Implement final support bundle generation before removal
-  - [x] 9.7 Write unit tests for uninstall flow and token verification
+- [~] 9. Implement Installer.Actions — Uninstall
+  - [x] 9.1 Stop in reverse order · [x] 9.2 Deregister · [x] 9.3 Binary removal · [x] 9.4 Data preserved by default
+  - [~] 9.5 Governance token verification for purge — **flow and typed-confirmation check are written, but `IOverrideTokenValidator` has no implementation, so `UninstallAction` cannot be constructed.**
+  - [ ] 9.6 Final support bundle before removal — **`UninstallAction` does not reference the collector.**
+  - [ ] 9.7 Unit tests for uninstall flow and token verification
 
-- [x] 10. Implement Installer.Agent (v1)
-  - [x] 10.1 Create InstallerAgent as TraceableBackgroundService with configurable main loop interval
-  - [x] 10.2 Implement service health polling (configurable interval, endpoint from service-map.yaml)
-  - [x] 10.3 Implement disk space monitoring (configurable thresholds from MonitoringOptions)
-  - [x] 10.4 Implement log rotation enforcement (configurable retention from LogRotationOptions)
-  - [x] 10.5 Implement support bundle auto-generation on critical failure
-  - [x] 10.6 Implement configuration drift detection (SHA-256 comparison, configurable interval)
-  - [x] 10.7 Implement clock drift detection (configurable thresholds)
-  - [x] 10.8 Write unit tests for each monitoring module
+- [~] 10. Implement Installer.Agent (v1)
+  - [x] 10.1 Worker with configurable loop · [x] 10.2 Health polling · [x] 10.3 Disk monitoring · [x] 10.4 Log rotation · [x] 10.6 Config drift (SHA-256)
+  - [ ] 10.5 Support bundle auto-generation on critical failure — **the agent never references the collector.**
+  - [ ] 10.7 Clock drift detection — **no monitor. The five registered monitors are DiskSpace, ConfigDrift, LogRotation, FileSync, Heartbeat.**
+  - [ ] 10.8 Unit tests per monitor
 
-- [x] 11. Implement SupportBundle collector
-  - [x] 11.1 Implement log collection with IRedactionEngine integration (PII masking)
-  - [x] 11.2 Implement service status collection (sc query for all ePACS services)
-  - [x] 11.3 Implement version/manifest collection (installed versions, schema version)
-  - [x] 11.4 Implement OS/disk/RAM summary collection
-  - [x] 11.5 Implement config collection with secret redaction
-  - [x] 11.6 Implement correlation-based log extraction (filter by correlationId)
-  - [x] 11.7 Implement encrypted ZIP packaging
-  - [x] 11.8 Write unit tests for redaction and packaging
+- [~] 11. Implement SupportBundle collector
+  - [~] 11.1 Log collection with redaction — **local regex redaction (password, connection string, Aadhaar, phone). Not `IRedactionEngine` from `Intellect.Erp.Observability` as AC-6.3 requires.**
+  - [x] 11.2–11.6 Service status, versions, OS/disk/RAM, config, correlation filtering
+  - [~] 11.7 Encrypted ZIP packaging — **`ZipFile.CreateFromDirectory`, plaintext. No encryption.**
+  - [ ] 11.8 Unit tests for redaction and packaging
 
-- [x] 12. Implement Installer.CLI (silent mode)
-  - [x] 12.1 Implement CLI argument parser (/quiet, /config:<path>, /mode:<install|uninstall|repair>)
-  - [x] 12.2 Implement .epcfg loading and validation for silent mode
-  - [x] 12.3 Implement exit code mapping (0=success, 1=precheck, 2=install, 3=health, 99=unknown)
-  - [x] 12.4 Implement file-only logging (no console output in quiet mode)
-  - [x] 12.5 Write integration tests for silent install flow
+- [~] 12. Implement Installer.CLI (silent mode) — **F1: this is the blocking item for the whole framework**
+  - [x] 12.1 CLI argument parser (`/quiet`, `/config:`, `/mode:`, `/demo`, `/harness-service-map:`)
+  - [ ] 12.2 `.epcfg` loading and validation — **the path is parsed and printed; the file is never opened.**
+  - [~] 12.3 Exit code mapping — **constants defined, but dispatch is by `ex.Message.Contains("precheck")` string matching, and the success path always returns 0 without doing anything.**
+  - [ ] 12.4 File-only logging in quiet mode — **writes to `Console` unconditionally.**
+  - [ ] 12.5 Integration tests for silent install
+  - [ ] **12.6 (NEW) Composition root.** A DI container that assembles verification → precheck → install → health into an executing pipeline. Until this exists, nothing above has run end-to-end even once.
 
-- [x] 13. Implement health endpoints and smoke test
-  - [x] 13.1 Create health endpoint contract (/health/live, /health/ready, /health/version)
-  - [x] 13.2 Implement smoke test runner (create/verify/delete test record via API)
-  - [x] 13.3 Implement health check aggregator (all services green = system healthy)
-  - [x] 13.4 Write unit tests for health aggregation logic
+- [~] 13. Implement health endpoints and smoke test
+  - [~] 13.1 Health endpoint contract — **defined in the service map as `/health/live` + `/health/ready`. No payload in this repository or in L2-R2 serves those paths.**
+  - [~] 13.2 Smoke test runner — **`HarnessSmokeTest` polls health endpoints. It does not create/verify/delete a test record as AC-1.8 requires.**
+  - [ ] 13.3 Health check aggregator
+  - [ ] 13.4 Unit tests for health aggregation
 
-- [x] 14. Create AGENTS.md and documentation
-  - [x] 14.1 Create AGENTS.md with project context, architecture, build commands, coding standards
-  - [x] 14.2 Create ADR-0001 through ADR-0006 (WiX v4, Garnet, Kafka KRaft, Kestrel, DbUp, Sync abstraction)
-  - [x] 14.3 Create operator-quick-start.md outline
-  - [x] 14.4 Create security-baseline.md outline
+- [~] 14. Create AGENTS.md and documentation
+  - [x] 14.1 AGENTS.md
+  - [~] 14.2 ADR-0001 through ADR-0006 — **written; ADR-0001 (WiX Burn) describes a component that does not exist and was moved to Proposed on 2026-08-29.**
+  - [ ] 14.3 operator-quick-start.md — **not present.**
+  - [ ] 14.4 security-baseline.md — **not present.**
 
+---
 
 ## Phase 2: Upgrade, Backup, Restore, Repair
 
-- [x] 15. Implement Backup Engine
-  - [x] 15.1 Create IBackupEngine interface and BackupManifest model
-  - [x] 15.2 Implement MySQL logical backup (mysqldump wrapper with configurable options)
-  - [x] 15.3 Implement attachment backup (tar with per-file SHA-256 manifest)
-  - [x] 15.4 Implement config and keys backup (with encryption)
-  - [x] 15.5 Implement sync state export (outbox pending + checkpoints)
-  - [x] 15.6 Implement backup encryption (AES-256-GCM with certificate-wrapped key)
-  - [x] 15.7 Implement backup manifest generation and signing
-  - [x] 15.8 Implement backup target validation (path exists, writable, sufficient space)
-  - [x] 15.9 Implement backup verification (checksum, manifest signature, dump readability)
-  - [x] 15.10 Write unit tests for backup engine
+- [~] 15. Implement Backup Engine
+  - [x] 15.1 `IBackupEngine` + `BackupManifest` model
+  - [ ] 15.2 MySQL logical backup — **`BackupDatabaseAsync` writes `mysql-dump.sql` containing the literal text "-- MySQL dump placeholder". No `mysqldump` is invoked. See F3.**
+  - [ ] 15.3 Attachment backup (tar + per-file SHA-256) — TODO at `BackupEngine.cs:307`
+  - [x] 15.4 Config backup — real file copy. *Keys backup copies metadata only.*
+  - [ ] 15.5 Sync state export — placeholder JSON at `BackupEngine.cs:300`
+  - [ ] 15.6 Backup encryption (AES-256-GCM) — **no code.**
+  - [ ] 15.7 Backup manifest signing — `ManifestSigned = false // TODO`
+  - [x] 15.8 Backup target validation (exists, writable, space) — real
+  - [ ] 15.9 Backup verification — `ManifestSignatureValid = false`, `DumpReadable = true` are hardcoded
+  - [ ] 15.10 Unit tests
 
-- [x] 16. Implement Restore Engine
-  - [x] 16.1 Create IRestoreEngine interface
-  - [x] 16.2 Implement backup package verification (signature + manifest + checksums)
-  - [x] 16.3 Implement pre-restore safety backup creation
-  - [x] 16.4 Implement MySQL restore (to staging datadir first, then validate)
-  - [x] 16.5 Implement attachment restore with hash verification
-  - [x] 16.6 Implement config and keys restore through decryption flow
-  - [x] 16.7 Implement sync checkpoint restore with reconciliation marking
-  - [x] 16.8 Write unit tests for restore engine
+- [ ] 16. Implement Restore Engine — **`IRestoreEngine` declared; zero implementing types. 16.1–16.8 all unimplemented.**
 
-- [x] 17. Implement Upgrade Engine
-  - [x] 17.1 Create IUpgradeEngine interface with side-by-side upgrade flow
-  - [x] 17.2 Implement upgrade path validation (version compatibility from manifest)
-  - [x] 17.3 Implement pre-upgrade backup (mandatory, blocks upgrade if fails)
-  - [x] 17.4 Implement binary staging (extract new version to releases/<new>/)
-  - [x] 17.5 Implement schema migration runner (DbUp wrapper with checkpoint persistence)
-  - [x] 17.6 Implement junction flip (atomic commit: switch 'current' to new version)
-  - [x] 17.7 Implement rollback on failure (revert junction, restore pre-upgrade backup)
-  - [x] 17.8 Implement schema fingerprint capture (before and after upgrade)
-  - [x] 17.9 Write unit tests for upgrade state transitions and rollback
+- [ ] 17. Implement Upgrade Engine — **`IUpgradeEngine` declared; zero implementing types. 17.1–17.9 all unimplemented.**
+  - Note for 17.6: the "atomic junction flip" the interface documents is not achievable with
+    `BinaryDeployer.SwitchCurrentAsync`'s delete-then-create sequence. A power cut between the
+    two leaves no `current` at all. Design a rename-based swap before implementing.
 
-- [x] 18. Implement Repair Mode
-  - [x] 18.1 Implement payload hash verification against installed manifest
-  - [x] 18.2 Implement binary replacement for mismatched files
-  - [x] 18.3 Implement config regeneration from templates + installation_registry
-  - [x] 18.4 Implement ACL re-application
-  - [x] 18.5 Implement service re-registration if missing
-  - [x] 18.6 Write unit tests for repair flow
+- [ ] 18. Implement Repair Mode — **no repair code exists. 18.1–18.6 unimplemented.**
 
-- [x] 19. Implement Schema Fingerprinting (DDL drift detection)
-  - [x] 19.1 Create ISchemaFingerprinter interface
-  - [x] 19.2 Implement INFORMATION_SCHEMA capture (tables, columns, indexes, FKs)
-  - [x] 19.3 Implement fingerprint hash computation and storage
-  - [x] 19.4 Implement drift detection (compare current vs expected baseline)
-  - [x] 19.5 Implement drift classification (benign, compatible, breaking)
-  - [x] 19.6 Write unit tests for fingerprint comparison and drift classification
+- [ ] 19. Implement Schema Fingerprinting — **`ISchemaFingerprinter` declared; zero implementing types. 19.1–19.6 unimplemented.** Upgrade (17.8) and repair both depend on this; implement it first.
 
+---
 
 ## Phase 3: Offline Sync Hardening
 
-- [x] 20. Implement Outbox Relay (MySQL → Kafka)
-  - [x] 20.1 Create IOutboxRelay interface
-  - [x] 20.2 Implement MySQL outbox poller (SELECT ... FOR UPDATE SKIP LOCKED pattern)
-  - [x] 20.3 Implement Kafka producer with configurable topic and partition key
-  - [x] 20.4 Implement graceful Kafka-down handling (retry with backoff, business unaffected)
-  - [x] 20.5 Implement checkpoint persistence (last relayed outbox ID in MySQL)
-  - [x] 20.6 Write unit tests for outbox relay
+> **Open question before any further work here (see ADR-0006).** The NLDR counterparty this
+> phase targets does not exist anywhere in L2-R2 — "NLDR" appears in no file outside this
+> repository. Confirm the programme exists and its timeline before spending further effort;
+> otherwise flag this phase off and keep `harness/` as a protocol rig only.
 
-- [x] 21. Implement Sync Agent
-  - [x] 21.1 Create ISyncAgent interface with connectivity state machine
-  - [x] 21.2 Implement connectivity detector (HTTPS HEAD probe to NLDR endpoint)
-  - [x] 21.3 Implement circuit breaker (configurable failure threshold, half-open, cooldown)
-  - [x] 21.4 Implement chunked upload with per-chunk ACK (resumable on reconnect)
-  - [x] 21.5 Implement bandwidth detection and adaptive chunk sizing (4G/3G/2G)
-  - [x] 21.6 Implement sync priority queue (financial txns → audit → master data → telemetry)
-  - [x] 21.7 Implement dead-letter handling (after max retries → quarantine)
-  - [x] 21.8 Implement durable checkpoint in MySQL (not in-memory)
-  - [x] 21.9 Write unit tests for circuit breaker and retry logic
+- [~] 20. Implement Outbox Relay (MySQL → Kafka)
+  - [x] 20.1 `IOutboxRelay` interface
+  - [ ] 20.2–20.5 Poller, producer, Kafka-down handling, checkpoint — **`OutboxRelay.cs:36` is `// TODO: Actual MySQL query + Kafka publish implementation`. The class is a shell.**
+  - [ ] 20.6 Unit tests
 
-- [x] 22. Implement Inbox Processing (NLDR → PACS)
-  - [x] 22.1 Create IInboxProcessor interface
-  - [x] 22.2 Implement idempotent message apply (duplicate detection via event_id)
-  - [x] 22.3 Implement conflict resolution per BRD 12.6 (duplicate, out-of-order, policy change, hash mismatch)
-  - [x] 22.4 Implement inbound command handler (policy updates, master data pushes)
-  - [x] 22.5 Write unit tests for conflict resolution logic
+- [~] 21. Implement Sync Agent
+  - [x] 21.1 Connectivity state machine · [x] 21.2 HTTPS probe · [x] 21.3 Circuit breaker (threshold, half-open, cooldown)
+  - [ ] 21.4 Chunked upload with per-chunk ACK — **`ISyncTransport` has zero implementations.**
+  - [ ] 21.5 Bandwidth detection / adaptive chunk sizing — **config values exist; no logic.**
+  - [ ] 21.6 Sync priority queue · [ ] 21.7 Dead-letter handling · [ ] 21.8 Durable MySQL checkpoint
+  - [ ] 21.9 Unit tests for circuit breaker and retry
 
-- [x] 23. Implement Reconciliation
-  - [x] 23.1 Create IReconciliationEngine interface
-  - [x] 23.2 Implement outbox checkpoint comparison with NLDR acknowledgments
-  - [x] 23.3 Implement drift detection (unacknowledged events, sequence gaps, hash mismatches)
-  - [x] 23.4 Implement reconciliation report generation (stored in MySQL + health dashboard)
-  - [x] 23.5 Write unit tests for reconciliation logic
+- [~] 22. Implement Inbox Processing (NLDR → PACS)
+  - [x] 22.1 `IInboxProcessor` + implementation shell
+  - [ ] 22.2 Idempotent apply · [ ] 22.3 Conflict resolution · [ ] 22.4 Command handler — **`InboxProcessor.cs:110` is `// TODO: Route to appropriate handler based on EventType`.**
+  - [ ] 22.5 Unit tests
 
+- [ ] 23. Implement Reconciliation — **`IReconciliationEngine` declared; zero implementing types. 23.1–23.5 unimplemented.**
+
+---
 
 ## Phase 4: Security Hardening
 
-- [x] 24. Implement Signing and Verification Pipeline
-  - [x] 24.1 Create ICodeSigner interface for Authenticode signing operations
-  - [x] 24.2 Implement release manifest signing (detached CMS signature)
-  - [x] 24.3 Implement backup manifest signing
-  - [x] 24.4 Implement certificate chain validation (trusted root verification)
-  - [x] 24.5 Write unit tests for signing and verification
+- [ ] 24. Implement Signing and Verification Pipeline — **`ICodeSigner` declared; zero implementing types. 24.1–24.5 unimplemented.** Note this is the *producing* side; the *verifying* side (5.2 detached CMS) is real.
 
-- [x] 25. Implement Access Control (ACL) Engine
-  - [x] 25.1 Create IAclEngine interface
-  - [x] 25.2 Implement per-service account ACL rules (from service-map.yaml)
-  - [x] 25.3 Implement data directory ACL lockdown (DB, cache, eventing, keys)
-  - [x] 25.4 Implement ACL verification (Installer Agent health check)
-  - [x] 25.5 Write unit tests for ACL rule generation
+- [ ] 25. Implement Access Control (ACL) Engine — **`IAclEngine` declared; zero implementing types. 25.1–25.5 unimplemented.**
 
-- [x] 26. Implement Firewall Rules Engine
-  - [x] 26.1 Create IFirewallManager interface
-  - [x] 26.2 Implement localhost-only binding rules (ports from config)
-  - [x] 26.3 Implement outbound NLDR-only rule (443 to configured FQDN)
-  - [x] 26.4 Implement firewall rule verification
-  - [x] 26.5 Write unit tests for rule generation
+- [ ] 26. Implement Firewall Rules Engine — **`IFirewallManager` declared; zero implementing types. 26.1–26.5 unimplemented.**
 
-- [x] 27. Implement Audit Log Hash Chaining
-  - [x] 27.1 Create IAuditChain interface
-  - [x] 27.2 Implement hash chain for critical events (install, upgrade, backup, restore, DB correction)
-  - [x] 27.3 Implement chain verification (detect tampering)
-  - [x] 27.4 Write unit tests for hash chain integrity
+- [~] 27. Implement Audit Log Hash Chaining
+  - [x] 27.1 `IAuditChain` interface · [x] 27.2 Hash chain over critical events · [x] 27.3 Chain verification
+  - [ ] 27.4 Unit tests — **none. This is tamper-evidence code with zero test coverage.**
 
-- [x] 28. Implement Secret Management
-  - [x] 28.1 Create ISecretStore interface
-  - [x] 28.2 Implement credential generation (DB passwords, service account passwords)
-  - [x] 28.3 Implement secret encryption at rest (DPAPI or certificate-based)
-  - [x] 28.4 Implement secret rotation support
-  - [x] 28.5 Implement secret-scan validation (ensure no plaintext in logs/config/bundles)
-  - [x] 28.6 Write unit tests for secret management
+- [~] 28. Implement Secret Management
+  - [x] 28.1 `ISecretStore` interface · [x] 28.2 Credential generation · [x] 28.3 Encryption at rest · [x] 28.4 Rotation support
+  - [ ] 28.5 Secret-scan validation — **no scanner.**
+  - [ ] 28.6 Unit tests — **none. This is the code that generates and stores the database password.**
+
+---
+
+## Cross-cutting items the original plan did not carry
+
+- [ ] **X1. Create the Windows service accounts.** `ServiceOrchestrator` registers services with
+  `obj= ".\ePACSDbSvc"` and friends, but nothing creates those local accounts or sets their
+  passwords. Registration will fail on a clean machine.
+
+- [x] **X2. Build on the estate SDK, on the estate's framework.** *Done 2026-08-29.* Both
+  solutions now target **`net10.0`** and build clean (0 warnings, 0 errors) on SDK **10.0.302**,
+  the same pin as the L2-R2 workspace. What this took, and what it found:
+  - `global.json` added, pinning 10.0.302 / `rollForward: latestFeature` — previously the SDK
+    was whatever the machine had.
+  - `AnalysisLevel` moved to `10.0-recommended` **in the same commit as the TargetFramework**,
+    so the analyser set is tied to the code and not to the build agent.
+  - **58 `CA1873` sites converted to `[LoggerMessage]` source generation** across 27 files, with
+    a `LogEvents` class per project and a documented EventId map (see
+    `src/Installer.Actions/Logging/LogEvents.cs`). This is a supportability win as much as a
+    performance one: an installer is diagnosed from a bundle by someone who was not there, and
+    a stable EventId survives message rewording.
+  - Two CA1873 sites were **real defects, not noise**: `Worker` held its monitors as a lazy
+    `IEnumerable<IMonitor>` and re-enumerated it every loop iteration for the life of the
+    installation (now materialised once); `FileSyncMonitor` summed the size of every pending
+    file unconditionally just to format one log line (now hoisted).
+  - Per-project `TargetFramework` declarations removed from all 22 csprojs — they were silently
+    overriding `Directory.Build.props`, which is why the test projects stayed on net8.0 through
+    an earlier retarget attempt.
+  - **Central Package Management introduced** for the installer solution
+    (`Directory.Packages.props`). Versions had already drifted between the two solutions
+    (Test.Sdk 17.6.0 vs 17.10.0, xunit 2.4.2 vs 2.9.0).
+  - **NU1510:** `Microsoft.Extensions.Diagnostics.HealthChecks` and `System.Text.Json` removed
+    from nine harness projects — both ship in the net10.0 shared framework now.
+  - **NU1903 (security):** Testcontainers 3.9.0 pulls SSH.NET transitively, and **every release
+    up to and including 2025.1.0 carries GHSA-q939-rpr3-3284 (HIGH)** — ScpClient arbitrary
+    file write. Pinned transitively to the first patched release, **2026.0.0**. See the note in
+    `harness/Directory.Packages.props`: that version is not yet in the estate's offline mirror
+    and must be added, or a disconnected build host cannot restore.
+
+- [x] **X3. CI that builds something installable.** *Done 2026-08-29.* New
+  `.github/workflows/ci.yml` restores (which is also the dependency-audit gate, since
+  `NuGet.Config` sets `auditLevel=high`), builds both solutions in Release on **Linux and
+  Windows**, runs every test that can run without Docker, and then — on a real Windows runner —
+  produces the **self-contained single-file win-x64** publish that ADR-0007 §1 describes, and
+  prints the artefact sizes so media growth is visible before it is a problem. `build.yml` keeps
+  its NuGet-packaging job and now carries a scope note saying it is not the gate.
+
+  Still not covered, deliberately and stated rather than implied: the integration, chaos and
+  long-offline suites need Docker and are not wired in (W9), and two of those projects are
+  still empty.
+
+- [ ] **X4. A guard against this file drifting again.** A check that fails when an item is
+  marked `[x]` and the type or file its evidence note names does not exist.
+
+- [ ] **X5. Register `l3_installer` in the workspace.** It is absent from
+  `ops/l2r2 bootstrap clone` and from `Intellect.L2R2.sln`, so it is not part of the estate's
+  build or CI.

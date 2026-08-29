@@ -6,6 +6,19 @@ using YamlEntry = System.Collections.Generic.Dictionary<string, object>;
 namespace Installer.Actions.Install;
 
 /// <summary>
+/// <para>
+/// <b>DEPRECATED 2026-08-29 — use <c>Installer.Actions.Topology.ServiceMapLoader</c>.</b>
+/// Nothing references this type. It is retained only so the comparison is visible in review;
+/// delete it once <c>ServiceMapLoader</c> has been exercised by the composition root.
+/// </para>
+/// <para>
+/// Why it is superseded: this parser recognises <c>http</c> health checks only. Given the
+/// framework's own <c>samples/service-map.yaml</c> it silently drops MySQL's <c>command</c>
+/// check, the <c>tcp</c> checks for cache and eventing, and every <c>data_directories</c>
+/// entry — producing a topology that looks complete and cannot gate a tier. It also duplicates
+/// YAML parsing that <c>YamlDotNet</c>, already a dependency, does correctly.
+/// </para>
+///
 /// Loads the harness service-map.yaml and filters services by group.
 /// PACS-side services (group=pacs) are always included.
 /// NLDR-side services (group=nldr) are included only in demo mode.
@@ -43,9 +56,7 @@ public sealed partial class HarnessServiceMapLoader : IHarnessServiceMapLoader
             .Select(s => (ServiceMapEntry)s)
             .ToList();
 
-        _logger.LogInformation(
-            "Loaded {Total} harness services from {Path}. Filtered to {Count} (includeNldr={IncludeNldr}).",
-            allServices.Count, serviceMapPath, filtered.Count, includeNldr);
+        LogEvents.HarnessServiceMapLoaded(_logger, allServices.Count, serviceMapPath, filtered.Count, includeNldr);
 
         return filtered;
     }

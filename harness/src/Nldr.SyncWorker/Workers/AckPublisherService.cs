@@ -59,7 +59,7 @@ public sealed class AckPublisherService(
             try
             {
                 await producer.PublishRawAsync(row.Topic, row.PacsId, row.PayloadJson ?? "{}", ct);
-                logger.LogInformation("[AckPublisher] Published {EventType} for {PacsId}", row.EventType, row.PacsId);
+                LogEvents.AckPublished(logger, row.EventType, row.PacsId);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

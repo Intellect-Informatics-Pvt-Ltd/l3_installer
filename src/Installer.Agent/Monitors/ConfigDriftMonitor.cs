@@ -60,7 +60,7 @@ public sealed class ConfigDriftMonitor : IMonitor
             _expectedHashes[file] = hash;
         }
 
-        _logger.LogInformation("Config drift baseline captured. {Count} files tracked.", _expectedHashes.Count);
+        LogEvents.DriftBaselineCaptured(_logger, _expectedHashes.Count);
     }
 
     public async Task ExecuteAsync(CancellationToken cancellationToken = default)
@@ -96,8 +96,7 @@ public sealed class ConfigDriftMonitor : IMonitor
 
         if (!driftDetected)
         {
-            _logger.LogInformation("Config drift check passed. No drift detected in {Count} files.",
-                _expectedHashes.Count);
+            LogEvents.DriftCheckPassed(_logger, _expectedHashes.Count);
         }
     }
 

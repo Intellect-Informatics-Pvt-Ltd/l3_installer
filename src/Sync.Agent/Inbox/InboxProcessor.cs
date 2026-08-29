@@ -41,7 +41,7 @@ public sealed class InboxProcessor : IInboxProcessor
             // 1. Duplicate detection
             if (_processedEventIds.Contains(evt.EventId))
             {
-                _logger.LogInformation("Duplicate event {EventId} — ACK without applying.", evt.EventId);
+                LogEvents.DuplicateEventAcked(_logger, evt.EventId);
                 duplicates++;
                 continue;
             }
@@ -111,8 +111,7 @@ public sealed class InboxProcessor : IInboxProcessor
         // - POLICY_UPDATE → update local policy tables, flag old-policy transactions
         // - MASTER_DATA → upsert master data (central wins for governed data)
         // - COMMAND → execute command (e.g., force-sync, config update)
-        _logger.LogInformation("Applied inbound event {EventId} (type: {Type}, seq: {Seq}).",
-            evt.EventId, evt.EventType, evt.SequenceNumber);
+        LogEvents.InboundEventApplied(_logger, evt.EventId, evt.EventType, evt.SequenceNumber);
     }
 
     private static string ComputePayloadHash(string payload)

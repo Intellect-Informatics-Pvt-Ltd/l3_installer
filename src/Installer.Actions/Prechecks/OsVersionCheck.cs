@@ -59,7 +59,7 @@ public sealed class OsVersionCheck : IPrecheck
             });
         }
 
-        _logger.LogInformation("OS version check passed. Build: {Build}, Architecture: x64.", currentBuild);
+        LogEvents.OsVersionPassed(_logger, currentBuild);
         return Task.FromResult(new PrecheckResult
         {
             CheckId = CheckId,

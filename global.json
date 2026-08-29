@@ -1,0 +1,10 @@
+{
+  "//": "Pins the .NET SDK for this repository. Added 2026-08-29 with the retarget to .NET 10.",
+  "//why": "This repo is cloned as a sibling inside the L2-R2 workspace, whose own global.json pins 10.0.302. Before this file existed, `dotnet build` here resolved to whatever SDK the machine happened to have: the same commit built clean on a .NET 8 box and failed with 58 analyser errors on a .NET 10 one, because AnalysisLevel was `latest-recommended` and TreatWarningsAsErrors turned the difference into a broken build. Pinning the SDK and the analysis level together is what makes the build reproducible on a developer laptop, in CI, and on a release machine.",
+  "//rollForward": "latestFeature accepts a newer 10.0.xxx feature band on a machine that has one, but never a different major - so nobody is silently moved to .NET 11. This matches the L2-R2 workspace pin exactly; keep the two in step.",
+  "sdk": {
+    "version": "10.0.302",
+    "rollForward": "latestFeature",
+    "allowPrerelease": false
+  }
+}

@@ -59,7 +59,7 @@ public sealed class RamCheck : IPrecheck
             });
         }
 
-        _logger.LogInformation("RAM check passed. Detected: {DetectedGb:F1} GB.", totalRamGb);
+        LogEvents.RamPassed(_logger, totalRamGb);
         return Task.FromResult(new PrecheckResult
         {
             CheckId = CheckId,

@@ -61,8 +61,14 @@ function Publish-Project {
     $fullPath = Join-Path $HarnessRoot $ProjectPath
     Write-Host "  Publishing: $ProjectPath → $OutputPath" -ForegroundColor Cyan
 
+    # -r win-x64 is passed here rather than being set in Directory.Build.props. Setting a
+    # RuntimeIdentifier for all Release builds made `dotnet test -c Release` produce a
+    # win-x64 test binary that could not run on a Linux CI agent. The RID belongs to the
+    # step that produces a payload, which is this one.
     dotnet publish $fullPath `
         -c $Configuration `
+        -r win-x64 `
+        --self-contained true `
         -o $OutputPath `
         --no-restore `
         2>&1

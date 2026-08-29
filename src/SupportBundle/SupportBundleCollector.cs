@@ -39,7 +39,7 @@ public sealed partial class SupportBundleCollector : ISupportBundleCollector
         var stagingDir = Path.Combine(bundleDir, bundleName);
         var zipPath = Path.Combine(bundleDir, $"{bundleName}.zip");
 
-        _logger.LogInformation("Collecting support bundle: {BundleName}.", bundleName);
+        LogEvents.BundleCollecting(_logger, bundleName);
 
         try
         {
@@ -65,7 +65,7 @@ public sealed partial class SupportBundleCollector : ISupportBundleCollector
 
             ZipFile.CreateFromDirectory(stagingDir, zipPath, CompressionLevel.Optimal, includeBaseDirectory: false);
 
-            _logger.LogInformation("Support bundle created: {ZipPath}.", zipPath);
+            LogEvents.BundleCreated(_logger, zipPath);
             return zipPath;
         }
         finally

@@ -102,8 +102,7 @@ public sealed class LogRotationMonitor : IMonitor
 
         if (totalDeleted > 0 || totalCompressed > 0)
         {
-            _logger.LogInformation("Log rotation complete. Deleted: {Deleted}, Compressed: {Compressed}.",
-                totalDeleted, totalCompressed);
+            LogEvents.LogRotationComplete(_logger, totalDeleted, totalCompressed);
         }
 
         return Task.CompletedTask;

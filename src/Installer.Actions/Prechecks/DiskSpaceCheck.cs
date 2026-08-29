@@ -72,8 +72,7 @@ public sealed class DiskSpaceCheck : IPrecheck
             });
         }
 
-        _logger.LogInformation("Disk space check passed. Data: {DataFreeGb:F1} GB, System: {SystemFreeGb:F1} GB.",
-            dataFreeGb, systemFreeGb);
+        LogEvents.DiskSpacePassed(_logger, dataFreeGb, systemFreeGb);
         return Task.FromResult(new PrecheckResult
         {
             CheckId = CheckId,

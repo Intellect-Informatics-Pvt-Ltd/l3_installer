@@ -1,17 +1,38 @@
 # ePACS Offline Installer + Sync Test Harness
 
-> Production-grade, signed Windows bootstrapper for the ePACS ERP stack, plus a three-backend simulation harness that proves the offline-first sync architecture end-to-end.
+> An installer **framework** for the ePACS ERP stack on offline Windows PACS nodes — a chassis
+> that verifies a signed payload, prechecks the machine, extracts and deploys it, registers and
+> orders Windows services, and monitors them afterwards. The stack it installs (application,
+> MySQL, cache, eventing) is bundled with it, so an offline node runs no database that was not
+> delivered and verified as part of the installation.
+
+> ### Status — read this first
+>
+> The framework is **under construction and has not yet run end-to-end.** `Installer.CLI` has no
+> composition root, so the components below exist as libraries that nothing yet assembles.
+> It builds clean on **.NET 10** (SDK 10.0.302, pinned in `global.json` to match the L2-R2
+> workspace) and CI builds and tests it on Linux and Windows.
+> **[`.kiro/specs/epacs-offline-installer/tasks.md`](.kiro/specs/epacs-offline-installer/tasks.md)
+> carries a per-item audit** — what is built, what is partial, and what is not started — and is
+> the only place to trust for status. In particular: there is no WiX bootstrapper, no payload
+> build, no database bootstrap, and no upgrade, restore or repair engine.
+>
+> `harness/` is a **deliberate stand-in payload**, not the product. It exists so the chassis can
+> be exercised before the real L2-R2 stack is pointed at it. `Pacs.Fas.Api` is a 435-line
+> simulation of `l3_FAS`; it must never be installed onto a node that runs the real thing.
 
 ---
 
 ## What's in This Repository
 
-| Component | Solution | Purpose |
-|-----------|----------|---------|
-| **Offline Installer** | `ePACS.Installer.sln` | Installs, upgrades, repairs, backs up, restores, and uninstalls the full ePACS stack on offline PACS nodes |
-| **Sync Test Harness** | `harness/ePACS.SyncHarness.sln` | Simulates PACS ↔ NLDR sync with fault injection, exercises 100+ test cases, serves as post-install smoke target |
+| Component | Solution | Purpose | Status |
+|-----------|----------|---------|--------|
+| **Offline Installer** | `ePACS.Installer.sln` | The framework: verification, prechecks, install, service orchestration, monitoring. Upgrade / repair / restore are designed but unimplemented. | ~8,240 LOC · 37 unit tests · no integration coverage |
+| **Sync Test Harness** | `harness/ePACS.SyncHarness.sln` | Stand-in payload and protocol rig for PACS ↔ NLDR sync. **A simulation, not the product.** | ~3,836 LOC · 15 tests · 5 projects are empty shells |
 
-Both target **.NET 8 LTS** on **Windows 10/11 x64** (offline, rural India).
+Both target **.NET 10** on **Windows 10/11 x64** (offline, rural India) — matched to the
+`r2-dev-stable` baseline of the L2-R2 platform, so an offline node carries one runtime and not
+two.
 
 ---
 
@@ -19,7 +40,9 @@ Both target **.NET 8 LTS** on **Windows 10/11 x64** (offline, rural India).
 
 ### Prerequisites
 
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) — the exact version is pinned
+  in `global.json` (10.0.302). Do not override it; the analyser set is tied to the target
+  framework, and an SDK mismatch turns into build errors rather than warnings.
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (for harness local dev and integration tests)
 
 ### Build Everything
@@ -77,9 +100,11 @@ This creates a voucher → writes to `sync_outbox` atomically → `Pacs.SyncWork
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  Installer Package (Authenticode-signed EXE)                     │
-│  WiX v4 Burn + C# Managed BootstrapperApplication               │
-│  Payloads: MySQL 8.4, Garnet, Kafka 3.7, JRE 17, Harness EXEs  │
+│  Installer Package (Authenticode-signed EXE)          NOT BUILT  │
+│  WiX v4 Burn + C# Managed BootstrapperApplication                │
+│  Payloads: MySQL 8.4, Garnet, Kafka 3.7, JRE 17, app services    │
+│  → see ADR-0001 (status: Proposed). No .wxs exists; today the    │
+│    entry point is Installer.CLI, which has no composition root.  │
 └─────────────────────────────────────────────────────────────────┘
          │ installs
          ▼
@@ -111,8 +136,9 @@ This creates a voucher → writes to `sync_outbox` atomically → `Pacs.SyncWork
 | `Installer.CLI` | Silent/unattended CLI (`/quiet /config /mode /demo`) |
 | `ManifestVerifier` | Authenticode signature + SHA-256 payload verification |
 | `SupportBundle` | Diagnostics collector with PII redaction |
-| `BackupRestore` | MySQL backup/restore workflows |
-| `Sync.Agent` | Outbox relay, connectivity detection, circuit breaker |
+| `BackupRestore` | Backup skeleton. **The MySQL dump itself is a placeholder** (`BackupEngine.cs:253`); restore is unimplemented. |
+| `Sync.Agent` | Connectivity detection and circuit breaker are real; the outbox relay and inbox routing are TODO shells |
+| `Installer.Actions/Topology` | `ServiceMapLoader` — the framework's single topology input (added 2026-08-29) |
 
 ### Harness (`harness/src/`)
 
@@ -120,13 +146,13 @@ This creates a voucher → writes to `sync_outbox` atomically → `Pacs.SyncWork
 |---------|------|---------|
 | `Harness.Common` | — | Shared contracts: envelope, hash, clock, fault hooks, options |
 | `Pacs.Fas.Api` | 5101 | FAS voucher REST API (INSERT/UPDATE/DELETE with outbox) |
-| `Pacs.Loans.Api` | 5102 | Loans REST API with maker-checker and amendments |
+| `Pacs.Loans.Api` | 5102 | *(empty shell — 9 lines)* |
 | `Pacs.SyncWorker` | 5103 | Outbox drain → Kafka, ACK consumer, heartbeat, file uploader |
-| `Pacs.OperatorUi` | 5301 | Razor MVC field-operator UI (FAS + Loans areas) |
+| `Pacs.OperatorUi` | 5301 | *(empty shell — 7 lines)* |
 | `Nldr.Api` | 5201 | Strict central receiver (12-step ingest pipeline) |
 | `Nldr.SyncWorker` | 5203 | ACK publisher, command publisher, heartbeat consumer |
-| `Nldr.DashboardUi` | 5401 | Razor MVC central observability dashboard |
-| `Harness.ScenarioPlayer` | — | Demo-mode orchestrator (one-button scenarios) |
+| `Nldr.DashboardUi` | 5401 | *(empty shell — 7 lines)* |
+| `Harness.ScenarioPlayer` | — | *(empty shell — no source files)* |
 
 ---
 
@@ -155,13 +181,17 @@ cd harness
 
 ## Testing
 
-| Test Suite | Docker | Duration | Command |
-|-----------|--------|----------|---------|
-| Installer unit tests | No | < 1s | `dotnet test ePACS.Installer.sln` |
-| Harness contract tests | No | < 1s | `dotnet test harness/tests/Harness.ContractTests/` |
-| Harness integration tests | Yes | ~30s | `dotnet test harness/tests/Harness.IntegrationTests/` |
-| Harness chaos tests | Yes | ~5min | `dotnet test harness/tests/Harness.ChaosTests/` |
-| Long offline soak | Yes | ~30min | `dotnet test harness/tests/Harness.LongOfflineTests/` |
+| Test Suite | Docker | Tests | Command |
+|-----------|--------|-------|---------|
+| Installer unit tests | No | **37** | `dotnet test ePACS.Installer.sln` |
+| Installer integration tests | No | **1 placeholder** | (in the same solution) |
+| Harness contract tests | No | **15** | `dotnet test harness/tests/Harness.ContractTests/` |
+| Harness integration tests | Yes | 0 `[Fact]`s; infrastructure only | `dotnet test harness/tests/Harness.IntegrationTests/` |
+| Harness chaos tests | Yes | **empty project** | — |
+| Long offline soak | Yes | **empty project** | — |
+
+There are **no integration tests that install anything**. Every claim in the sections above is
+verified by inspection, not by execution.
 
 ---
 

@@ -43,7 +43,7 @@ public sealed class OutboxRelay : IOutboxRelay
         // 5. COMMIT
         // On Kafka failure: ROLLBACK, mark _kafkaAvailable=false
 
-        _logger.LogInformation("Outbox drain cycle: batch size {BatchSize}. (Implementation pending MySQL/Kafka integration).", batchSize);
+        LogEvents.OutboxDrainCycle(_logger, batchSize);
         return Task.FromResult(0);
     }
 

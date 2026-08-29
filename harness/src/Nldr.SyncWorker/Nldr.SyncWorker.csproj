@@ -1,9 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk.Worker">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>epacs-nldr-sync-worker</UserSecretsId>
     <NoWarn>CA1848;$(NoWarn)</NoWarn>
   </PropertyGroup>
@@ -17,7 +14,6 @@
     <PackageReference Include="Confluent.Kafka" />
     <PackageReference Include="Polly" />
     <PackageReference Include="Polly.Extensions" />
-    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
   </ItemGroup>
 
   <ItemGroup>

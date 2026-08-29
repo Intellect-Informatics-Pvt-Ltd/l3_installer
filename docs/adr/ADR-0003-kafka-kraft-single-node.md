@@ -38,3 +38,19 @@ Use **Apache Kafka 3.7.x LTS in KRaft mode** (single-node, no ZooKeeper).
 - Kafka startup adds ~10s to the service chain
 - `kafka.properties` must be templated with data/log directories from config
 - Topic auto-creation disabled; topics created by `KafkaTopicInitializer` at startup
+
+---
+
+## Implementation status (audited 2026-08-29)
+
+**Not realised.** Kafka appears only as a service definition in `samples/service-map.yaml` and
+as a manifest payload entry. `Sync.Agent/Outbox/OutboxRelay.cs:36` — the one place that would
+produce to it — is `// TODO: Actual MySQL query + Kafka publish implementation`.
+
+**Sizing point for the real payload.** Kafka (110 MB) plus the JRE it needs (180 MB) is ~290 MB
+of a USB medium, and both are marked `required: true` in `samples/release-manifest.yaml`. In
+L2-R2, Kafka use is **flag-gated**: `FAS/ServiceRegistration.cs:286` reads
+`Orchestration.Enabled && FasVoucherMessaging.Enabled`, and the orchestration flag is described
+in that file as "the master Kafka kill-switch". A single-node offline PACS with orchestration
+off does not need Kafka at all. Make the payload conditional on the flag rather than mandatory,
+or justify carrying 290 MB to every site.

@@ -54,9 +54,7 @@ public sealed class HarnessSmokeTest : IHarnessSmokeTest
             ? PacsEndpoints.Concat(NldrEndpoints).ToArray()
             : PacsEndpoints;
 
-        _logger.LogInformation(
-            "Running harness smoke test against {Count} services (demo={Demo}).",
-            endpoints.Length, demoMode);
+        LogEvents.SmokeTestStarting(_logger, endpoints.Length, demoMode);
 
         var results = new List<ServiceSmokeStatus>();
 
@@ -67,10 +65,8 @@ public sealed class HarnessSmokeTest : IHarnessSmokeTest
             results.Add(status);
 
             var icon = status.Healthy ? "✓" : "✗";
-            _logger.LogInformation(
-                "  {Icon} {Service}: {Status} ({ResponseMs}ms)",
-                icon, name, status.Healthy ? "healthy" : status.Error ?? "unhealthy",
-                (int)status.ResponseTime.TotalMilliseconds);
+            LogEvents.SmokeTestServiceResult(
+                _logger, icon, name, status.Healthy ? "healthy" : status.Error ?? "unhealthy", (int)status.ResponseTime.TotalMilliseconds);
         }
 
         sw.Stop();
@@ -78,7 +74,7 @@ public sealed class HarnessSmokeTest : IHarnessSmokeTest
 
         if (allHealthy)
         {
-            _logger.LogInformation("Harness smoke test PASSED in {Duration}ms.", (int)sw.Elapsed.TotalMilliseconds);
+            LogEvents.SmokeTestPassed(_logger, (int)sw.Elapsed.TotalMilliseconds);
         }
         else
         {
@@ -121,9 +117,7 @@ public sealed class HarnessSmokeTest : IHarnessSmokeTest
 
                 if (attempt < MaxRetries)
                 {
-                    _logger.LogDebug(
-                        "  {Service} returned {Status} on attempt {Attempt}/{Max}. Retrying...",
-                        name, (int)response.StatusCode, attempt, MaxRetries);
+                    LogEvents.SmokeTestRetryStatus(_logger, name, (int)response.StatusCode, attempt, MaxRetries);
                     await Task.Delay(RetryDelay, ct);
                 }
                 else
@@ -145,9 +139,7 @@ public sealed class HarnessSmokeTest : IHarnessSmokeTest
 
                 if (attempt < MaxRetries)
                 {
-                    _logger.LogDebug(
-                        "  {Service} unreachable on attempt {Attempt}/{Max}: {Error}. Retrying...",
-                        name, attempt, MaxRetries, ex.Message);
+                    LogEvents.SmokeTestRetryUnreachable(_logger, name, attempt, MaxRetries, ex.Message);
                     await Task.Delay(RetryDelay, ct);
                 }
                 else

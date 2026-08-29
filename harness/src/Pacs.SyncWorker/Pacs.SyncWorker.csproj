@@ -1,9 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk.Worker">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>epacs-pacs-sync-worker</UserSecretsId>
     <!-- CA1848: structured logging adapter pattern — LoggerMessage not required in worker loops -->
     <NoWarn>CA1848;$(NoWarn)</NoWarn>
@@ -18,7 +15,6 @@
     <PackageReference Include="Confluent.Kafka" />
     <PackageReference Include="Polly" />
     <PackageReference Include="Polly.Extensions" />
-    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
   </ItemGroup>
 
   <ItemGroup>

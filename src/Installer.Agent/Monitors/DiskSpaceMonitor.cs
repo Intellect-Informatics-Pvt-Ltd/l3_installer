@@ -43,9 +43,7 @@ public sealed class DiskSpaceMonitor : IMonitor
 
             if (freePercent < thresholds.CriticalPercent)
             {
-                _logger.LogCritical(
-                    "DISK CRITICAL: Data volume {Volume} at {FreePercent}% free ({FreeGb:F1} GB). Threshold: {Threshold}%.",
-                    volumePath, freePercent, freeGb, thresholds.CriticalPercent);
+                LogEvents.DiskCritical(_logger, volumePath, freePercent, freeGb, thresholds.CriticalPercent);
             }
             else if (freePercent < thresholds.RedPercent)
             {
@@ -61,9 +59,7 @@ public sealed class DiskSpaceMonitor : IMonitor
             }
             else
             {
-                _logger.LogInformation(
-                    "Disk space OK: {Volume} at {FreePercent}% free ({FreeGb:F1} GB).",
-                    volumePath, freePercent, freeGb);
+                LogEvents.DiskOk(_logger, volumePath, freePercent, freeGb);
             }
         }
         catch (Exception ex)

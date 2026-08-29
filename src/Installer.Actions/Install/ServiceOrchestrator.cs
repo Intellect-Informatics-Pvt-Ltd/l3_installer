@@ -24,7 +24,7 @@ public sealed class ServiceOrchestrator : IServiceOrchestrator
     public async Task RegisterAllAsync(IReadOnlyList<ServiceMapEntry> services, CancellationToken cancellationToken = default)
     {
         var ordered = services.OrderBy(s => s.StartOrder).ToList();
-        _logger.LogInformation("Registering {Count} Windows services.", ordered.Count);
+        LogEvents.RegisteringServices(_logger, ordered.Count);
 
         foreach (var service in ordered)
         {
@@ -36,7 +36,7 @@ public sealed class ServiceOrchestrator : IServiceOrchestrator
     public async Task StartAllAsync(IReadOnlyList<ServiceMapEntry> services, CancellationToken cancellationToken = default)
     {
         var ordered = services.OrderBy(s => s.StartOrder).ToList();
-        _logger.LogInformation("Starting {Count} services in dependency order.", ordered.Count);
+        LogEvents.StartingServices(_logger, ordered.Count);
 
         foreach (var service in ordered)
         {
@@ -49,7 +49,7 @@ public sealed class ServiceOrchestrator : IServiceOrchestrator
     {
         // Stop in reverse order (highest stop_order first)
         var ordered = services.OrderByDescending(s => s.StopOrder).ToList();
-        _logger.LogInformation("Stopping {Count} services in reverse dependency order.", ordered.Count);
+        LogEvents.StoppingServices(_logger, ordered.Count);
 
         foreach (var service in ordered)
         {
@@ -60,7 +60,7 @@ public sealed class ServiceOrchestrator : IServiceOrchestrator
 
     public async Task DeregisterAllAsync(IReadOnlyList<ServiceMapEntry> services, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Deregistering {Count} Windows services.", services.Count);
+        LogEvents.DeregisteringServices(_logger, services.Count);
 
         foreach (var service in services)
         {
@@ -77,8 +77,7 @@ public sealed class ServiceOrchestrator : IServiceOrchestrator
             ? $"\"{executablePath}\""
             : $"\"{executablePath}\" {arguments}";
 
-        _logger.LogInformation("Registering service {Name} (account: {Account}, startup: {Startup}).",
-            service.Name, service.Account, service.StartupType);
+        LogEvents.RegisteringService(_logger, service.Name, service.Account, service.StartupType);
 
         var startType = service.StartupType.ToLowerInvariant() switch
         {
@@ -128,7 +127,7 @@ public sealed class ServiceOrchestrator : IServiceOrchestrator
 
     private async Task StartServiceAsync(ServiceMapEntry service, CancellationToken ct)
     {
-        _logger.LogInformation("Starting service {Name}...", service.Name);
+        LogEvents.StartingService(_logger, service.Name);
 
         var result = await RunScCommandAsync($"start {service.Name}", ct);
 
@@ -141,12 +140,12 @@ public sealed class ServiceOrchestrator : IServiceOrchestrator
 
         // Wait for service to reach running state
         await WaitForServiceStateAsync(service.Name, "RUNNING", TimeSpan.FromSeconds(service.HealthCheck.TimeoutSeconds), ct);
-        _logger.LogInformation("Service {Name} started successfully.", service.Name);
+        LogEvents.ServiceStarted(_logger, service.Name);
     }
 
     private async Task StopServiceAsync(ServiceMapEntry service, CancellationToken ct)
     {
-        _logger.LogInformation("Stopping service {Name}...", service.Name);
+        LogEvents.StoppingService(_logger, service.Name);
 
         var result = await RunScCommandAsync($"stop {service.Name}", ct);
 
@@ -158,12 +157,12 @@ public sealed class ServiceOrchestrator : IServiceOrchestrator
         }
 
         await WaitForServiceStateAsync(service.Name, "STOPPED", TimeSpan.FromSeconds(30), ct);
-        _logger.LogInformation("Service {Name} stopped.", service.Name);
+        LogEvents.ServiceStopped(_logger, service.Name);
     }
 
     private async Task DeregisterServiceAsync(ServiceMapEntry service, CancellationToken ct)
     {
-        _logger.LogInformation("Deregistering service {Name}.", service.Name);
+        LogEvents.DeregisteringService(_logger, service.Name);
 
         // Stop first if running
         await StopServiceAsync(service, ct);

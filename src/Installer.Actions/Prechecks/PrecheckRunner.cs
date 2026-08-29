@@ -27,7 +27,7 @@ public sealed class PrecheckRunner
         var orderedChecks = _prechecks.OrderBy(c => c.Order).ToList();
         var results = new List<PrecheckResult>(orderedChecks.Count);
 
-        _logger.LogInformation("Starting precheck suite with {CheckCount} checks.", orderedChecks.Count);
+        LogEvents.PrecheckSuiteStarting(_logger, orderedChecks.Count);
 
         foreach (var check in orderedChecks)
         {
@@ -35,7 +35,7 @@ public sealed class PrecheckRunner
 
             try
             {
-                _logger.LogInformation("Running precheck: {CheckName} ({CheckId}).", check.Name, check.CheckId);
+                LogEvents.PrecheckRunning(_logger, check.Name, check.CheckId);
                 var result = await check.ExecuteAsync(cancellationToken);
                 results.Add(result);
 
@@ -47,8 +47,7 @@ public sealed class PrecheckRunner
                     _ => LogLevel.Information
                 };
 
-                _logger.Log(logLevel, "Precheck {CheckId}: {Severity} — {Message}",
-                    check.CheckId, result.Severity, result.Message);
+                LogEvents.PrecheckResultLogged(_logger, logLevel, check.CheckId, result.Severity, result.Message);
             }
             catch (Exception ex)
             {
@@ -67,9 +66,8 @@ public sealed class PrecheckRunner
 
         var suiteResult = new PrecheckSuiteResult { Results = results };
 
-        _logger.LogInformation(
-            "Precheck suite complete. Passed: {Passed}, Warnings: {Warnings}, Blocking: {Blocking}. Can proceed: {CanProceed}.",
-            suiteResult.PassedCount, suiteResult.WarningCount, suiteResult.BlockingCount, suiteResult.CanProceed);
+        LogEvents.PrecheckSuiteComplete(
+            _logger, suiteResult.PassedCount, suiteResult.WarningCount, suiteResult.BlockingCount, suiteResult.CanProceed);
 
         return suiteResult;
     }

@@ -14,7 +14,11 @@ namespace Installer.Agent;
 /// </summary>
 public sealed class Worker : BackgroundService
 {
-    private readonly IEnumerable<IMonitor> _monitors;
+    // Materialised in the constructor, not held as IEnumerable. An IEnumerable<T> from the
+    // container is re-enumerated on every access: this worker touches it once per loop
+    // iteration for the life of the installation, so the lazy form was doing work forever for
+    // a set that never changes. It also made Count() an expensive log argument (CA1873).
+    private readonly IMonitor[] _monitors;
     private readonly IOptions<MonitoringOptions> _monitoringOptions;
     private readonly ILogger<Worker> _logger;
 
@@ -23,15 +27,14 @@ public sealed class Worker : BackgroundService
         IOptions<MonitoringOptions> monitoringOptions,
         ILogger<Worker> logger)
     {
-        _monitors = monitors;
+        _monitors = monitors as IMonitor[] ?? monitors.ToArray();
         _monitoringOptions = monitoringOptions;
         _logger = logger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("ePACS Installer Agent starting. Monitors: {Count}.",
-            _monitors.Count());
+        LogEvents.AgentStarting(_logger, _monitors.Length);
 
         // Track last execution time per monitor
         var lastExecution = new Dictionary<string, DateTime>();
@@ -77,7 +80,7 @@ public sealed class Worker : BackgroundService
             }
 
             // Sleep for the shortest monitor interval (minimum 10 seconds)
-            var minInterval = _monitors.Any()
+            var minInterval = _monitors.Length > 0
                 ? Math.Max(10, _monitors.Min(m => m.IntervalSeconds))
                 : 60;
 

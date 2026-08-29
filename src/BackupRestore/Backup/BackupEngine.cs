@@ -54,8 +54,7 @@ public sealed class BackupEngine : IBackupEngine
         var backupDir = Path.Combine(targetValidation.TargetPath, backupId);
         Directory.CreateDirectory(backupDir);
 
-        _logger.LogInformation("Creating {BackupType} backup: {BackupId} at {Path}.",
-            backupType, backupId, backupDir);
+        LogEvents.BackupStarting(_logger, backupType, backupId, backupDir);
 
         var files = new List<BackupFileEntry>();
 
@@ -130,8 +129,7 @@ public sealed class BackupEngine : IBackupEngine
         await File.WriteAllTextAsync(Path.Combine(backupDir, "backup-manifest.json"), manifestJson, cancellationToken);
 
         progress?.Invoke("Backup complete", 100);
-        _logger.LogInformation("Backup {BackupId} created successfully. Files: {FileCount}, Path: {Path}.",
-            backupId, files.Count, backupDir);
+        LogEvents.BackupCreated(_logger, backupId, files.Count, backupDir);
 
         return manifest;
     }

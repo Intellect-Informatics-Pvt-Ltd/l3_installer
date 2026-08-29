@@ -44,7 +44,7 @@ public sealed partial class ConfigGenerator : IConfigGenerator
         }
 
         var templateFiles = Directory.GetFiles(templateDirectory, "*.template.*", SearchOption.AllDirectories);
-        _logger.LogInformation("Generating {Count} config files from templates.", templateFiles.Length);
+        LogEvents.GeneratingConfigs(_logger, templateFiles.Length);
 
         var tokenMap = BuildTokenMap(siteConfig);
 
@@ -71,7 +71,7 @@ public sealed partial class ConfigGenerator : IConfigGenerator
             await File.WriteAllTextAsync(tempPath, resolvedContent, cancellationToken);
             File.Move(tempPath, outputPath, overwrite: true);
 
-            _logger.LogInformation("Generated config: {OutputPath}.", outputPath);
+            LogEvents.ConfigGenerated(_logger, outputPath);
         }
     }
 

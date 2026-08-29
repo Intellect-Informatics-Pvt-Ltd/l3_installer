@@ -1,3 +1,10 @@
+# Packages the shared libraries to GitHub Packages.
+#
+# SCOPE NOTE (2026-08-29): this workflow does NOT build or test the installer, and it is not
+# meant to. Build, test, dependency audit and the win-x64 publish live in ci.yml, which is the
+# gate. Keep it that way - a packaging job that also pretends to be CI is how this repository
+# came to have a green badge over a product nothing built.
+
 name: Build and Push NuGet Packages
 
 on:
@@ -61,10 +68,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up .NET
+      # global.json is the single SDK pin for this repository (10.0.302, matching the L2-R2
+      # workspace). Naming a version here as well is how the two drift; this job used to pin
+      # 8.0.x while the code targeted net8.0, and both moved to net10.0 on 2026-08-29.
+      - name: Set up .NET from global.json
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "8.0.x"
+          global-json-file: global.json
 
       - name: Validate repository configuration
         shell: bash

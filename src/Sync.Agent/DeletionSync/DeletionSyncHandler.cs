@@ -33,8 +33,7 @@ public sealed class DeletionSyncHandler : IDeletionSyncHandler
     {
         if (!_options.Value.CaptureDeleteEvents)
         {
-            _logger.LogInformation("Delete event capture disabled. Skipping sync for {EntityType}/{EntityId}.",
-                entry.EntityType, entry.EntityId);
+            LogEvents.DeleteCaptureDisabled(_logger, entry.EntityType, entry.EntityId);
             return Task.CompletedTask;
         }
 
@@ -46,9 +45,8 @@ public sealed class DeletionSyncHandler : IDeletionSyncHandler
         //   amendment_reason, created_at, pacs_id)
         // VALUES ('DATA_CHANGE', 'DELETE', ?, ?, ?, ?, ?, ?, ?, NOW(), ?)
 
-        _logger.LogInformation(
-            "Deletion sync event recorded: {EntityType}/{EntityId} by {DeletedBy}. Reason: {Reason}.",
-            entry.EntityType, entry.EntityId, entry.DeletedBy, entry.DeletionReason ?? "none");
+        LogEvents.DeletionSyncRecorded(
+            _logger, entry.EntityType, entry.EntityId, entry.DeletedBy, entry.DeletionReason ?? "none");
 
         return Task.CompletedTask;
     }
@@ -57,8 +55,7 @@ public sealed class DeletionSyncHandler : IDeletionSyncHandler
     {
         if (!_options.Value.CaptureAmendmentEvents)
         {
-            _logger.LogInformation("Amendment event capture disabled. Skipping sync for {EntityType}/{EntityId}.",
-                entry.EntityType, entry.EntityId);
+            LogEvents.AmendmentCaptureDisabled(_logger, entry.EntityType, entry.EntityId);
             return Task.CompletedTask;
         }
 

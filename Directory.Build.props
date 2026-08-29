@@ -1,12 +1,19 @@
 <Project>
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <!-- Pinned deliberately, NOT `latest-recommended`. With `latest`, the analyser set is
+         chosen by whichever SDK happens to be installed, so the same commit can build clean on
+         one machine and fail on another; `TreatWarningsAsErrors` turns that difference into a
+         broken build rather than a diff in warning counts. Tying the level to the
+         TargetFramework means the analyser set moves when the code moves - as a decision, in a
+         reviewable commit - and never as a side effect of the build agent. Raise this in the
+         same commit that raises the TargetFramework, and clear the new diagnostics then. -->
+    <AnalysisLevel>10.0-recommended</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-    <LangVersion>12</LangVersion>
+    <LangVersion>14.0</LangVersion>
   </PropertyGroup>
 
   <PropertyGroup>
