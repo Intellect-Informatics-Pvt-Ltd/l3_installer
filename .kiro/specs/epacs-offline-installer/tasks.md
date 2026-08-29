@@ -361,7 +361,7 @@ and the claim has to be updated with it — which is the point.
 
 - [~] 15. Implement Backup Engine
   - [x] 15.1 `IBackupEngine` + `BackupManifest` model
-  - [ ] 15.2 MySQL logical backup — **`BackupDatabaseAsync` writes `mysql-dump.sql` containing the literal text "-- MySQL dump placeholder". No `mysqldump` is invoked. See F3.**
+  - [x] 15.2 MySQL logical backup — **DONE 2026-08-29.** Real `mysqldump` via `IProcessRunner`, with `--single-transaction` (a consistent snapshot without stopping the counter), `--routines --triggers --events` (all three omitted by default — a restore missing them succeeds and the estate's stored logic is silently gone), `--set-gtid-purged=OFF` and `--hex-blob`. **Then it proves the dump is whole**: mysqldump can exit 0 having written a truncated file — a full disk is the usual way — and a truncated dump restores cleanly up to the point it stops. The completion marker is checked, so `rc=0` is not the verdict here either. Password via `MYSQL_PWD`, never the command line.
   - [ ] 15.3 Attachment backup (tar + per-file SHA-256) — TODO at `BackupEngine.cs:307`
   - [x] 15.4 Config backup — real file copy. *Keys backup copies metadata only.*
   - [ ] 15.5 Sync state export — placeholder JSON at `BackupEngine.cs:300`
@@ -371,7 +371,15 @@ and the claim has to be updated with it — which is the point.
   - [ ] 15.9 Backup verification — `ManifestSignatureValid = false`, `DumpReadable = true` are hardcoded
   - [ ] 15.10 Unit tests
 
-- [ ] 16. Implement Restore Engine — **`IRestoreEngine` declared; zero implementing types. 16.1–16.8 all unimplemented.**
+- [~] 16. Implement Restore Engine — **DONE 2026-08-29** except encryption. `BackupRestore/Restore/RestoreEngine`.
+  - [x] 16.2 Package verification by hash before anything is touched — a backup lives on removable media and is read months later, which is exactly where truncation and bit-rot happen. Verifying first means a bad package costs nothing.
+  - [x] 16.3 Pre-restore safety backup. **The hinge**, as the estate's own runbook names it: everything before is safe, everything after changes a database somebody's books live in. An operator restoring last night's backup at 4pm has already lost today; they should not also lose the ability to get it back. Skippable (a node with no disk space may have no choice) and recorded loudly when skipped.
+  - [x] 16.4 MySQL restore, with a **census after** — `mysql` exits 0 on an empty input, so without counting, "restored" and "did nothing at all" are indistinguishable.
+  - [x] 16.5 Attachment and 16.6 config restore.
+  - [x] **Refuses a placeholder dump.** Backups taken before 2026-08-29 contain `-- MySQL dump placeholder`; restoring one would silently produce an empty database, so the head of the file is checked.
+  - [x] 16.7 `RequiresReconciliation` is **always true** after a restore: the node's outbox is back to what it was when the backup was taken, so anything sent since is a gap the central side has and this node no longer knows it sent.
+  - [ ] Encryption/decryption of the package (15.6 is still open, so there is nothing to decrypt yet).
+  - [x] 16.8 Tests.
 
 - [ ] 17. Implement Upgrade Engine — **`IUpgradeEngine` declared; zero implementing types. 17.1–17.9 all unimplemented.**
   - Note for 17.6: the "atomic junction flip" the interface documents is not achievable with

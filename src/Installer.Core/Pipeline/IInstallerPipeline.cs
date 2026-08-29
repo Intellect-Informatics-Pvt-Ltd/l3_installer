@@ -30,6 +30,9 @@ public sealed record PipelineRequest
     /// <summary>Purge business data during uninstall. Requires an override token and typed confirmation.</summary>
     public bool PurgeData { get; init; }
 
+    /// <summary>The backup to restore from. Required for Restore; the installer will not guess.</summary>
+    public string? BackupPath { get; init; }
+
     public string? OverrideToken { get; init; }
     public string? TypedConfirmation { get; init; }
 

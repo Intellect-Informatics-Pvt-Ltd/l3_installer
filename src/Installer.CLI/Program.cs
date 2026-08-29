@@ -73,6 +73,7 @@ public static class Program
                 Mode = options.Mode,
                 SiteConfig = siteConfig,
                 MediaDirectory = options.MediaDirectory,
+                BackupPath = options.BackupPath,
                 PurgeData = options.PurgeData,
                 OverrideToken = options.OverrideToken,
                 TypedConfirmation = options.TypedConfirmation,

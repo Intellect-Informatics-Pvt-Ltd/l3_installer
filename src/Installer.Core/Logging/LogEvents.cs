@@ -96,4 +96,29 @@ internal static partial class LogEvents
     [LoggerMessage(EventId = 1060, Level = LogLevel.Information,
         Message = "Schema captured from {Database}: {Tables} table(s), {Columns} column(s), fingerprint {Hash}...")]
     public static partial void SchemaCaptured(ILogger logger, string database, int tables, int columns, string hash);
+
+    // Upgrade: 1070-1089
+    [LoggerMessage(EventId = 1070, Level = LogLevel.Information,
+        Message = "Pre-upgrade backup {BackupId} taken and VERIFIED before upgrading from {Version}.")]
+    public static partial void PreUpgradeBackupVerified(ILogger logger, string backupId, string version);
+
+    [LoggerMessage(EventId = 1071, Level = LogLevel.Information,
+        Message = "Upgrade succeeded: {From} -> {To}. Pre-upgrade backup {BackupId} retained.")]
+    public static partial void UpgradeSucceeded(ILogger logger, string from, string to, string backupId);
+
+    [LoggerMessage(EventId = 1072, Level = LogLevel.Error,
+        Message = "Upgrade from {From} to {To} failed.")]
+    public static partial void UpgradeFailed(ILogger logger, Exception exception, string from, string to);
+
+    [LoggerMessage(EventId = 1075, Level = LogLevel.Warning,
+        Message = "Rolling back to {Version}, restoring {Backup}.")]
+    public static partial void RollbackStarting(ILogger logger, string version, string backup);
+
+    [LoggerMessage(EventId = 1076, Level = LogLevel.Information,
+        Message = "Rollback to {Version} complete.")]
+    public static partial void RollbackCompleted(ILogger logger, string version);
+
+    [LoggerMessage(EventId = 1077, Level = LogLevel.Critical,
+        Message = "ROLLBACK FAILED after a failed upgrade to {Version}. This node needs a person. Backup: {Backup}.")]
+    public static partial void RollbackFailed(ILogger logger, Exception exception, string version, string backup);
 }

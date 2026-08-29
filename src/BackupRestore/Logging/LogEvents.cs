@@ -39,4 +39,16 @@ internal static partial class LogEvents
 
     [LoggerMessage(EventId = 3002, Level = LogLevel.Information, Message = "Backup {BackupId} created successfully. Files: {FileCount}, Path: {Path}.")]
     public static partial void BackupCreated(ILogger logger, string backupId, int fileCount, string path);
+
+    [LoggerMessage(EventId = 3010, Level = LogLevel.Information,
+        Message = "Safety backup {BackupId} taken before restore.")]
+    public static partial void SafetyBackupTaken(ILogger logger, string backupId);
+
+    [LoggerMessage(EventId = 3011, Level = LogLevel.Warning,
+        Message = "Restoring WITHOUT a safety backup. The data being replaced is not recoverable after this point.")]
+    public static partial void SafetyBackupSkipped(ILogger logger);
+
+    [LoggerMessage(EventId = 3012, Level = LogLevel.Information,
+        Message = "Restore from {BackupId} complete: {Before} -> {After} tables.")]
+    public static partial void RestoreCompleted(ILogger logger, string backupId, int before, int after);
 }

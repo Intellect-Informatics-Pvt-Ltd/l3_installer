@@ -1,3 +1,6 @@
+using System.Globalization;
+using Installer.Actions.Database;
+using SharedKernel.Security;
 using System.Security.Cryptography;
 using BackupRestore.Models;
 using Microsoft.Extensions.Logging;
@@ -19,8 +22,13 @@ namespace BackupRestore.Backup;
 /// </summary>
 public sealed class BackupEngine : IBackupEngine
 {
+    private const string RootPasswordSecretKey = "mysql.root.password";
+
     private readonly IOptions<BackupOptions> _backupOptions;
     private readonly IOptions<InstallerOptions> _installerOptions;
+    private readonly IOptions<ServicesOptions> _servicesOptions;
+    private readonly ISecretStore _secrets;
+    private readonly IProcessRunner _runner;
     private readonly ILogger<BackupEngine> _logger;
 
     private static readonly System.Text.Json.JsonSerializerOptions ManifestJsonOptions = new() { WriteIndented = true };
@@ -28,10 +36,16 @@ public sealed class BackupEngine : IBackupEngine
     public BackupEngine(
         IOptions<BackupOptions> backupOptions,
         IOptions<InstallerOptions> installerOptions,
+        IOptions<ServicesOptions> servicesOptions,
+        ISecretStore secrets,
+        IProcessRunner runner,
         ILogger<BackupEngine> logger)
     {
         _backupOptions = backupOptions;
         _installerOptions = installerOptions;
+        _servicesOptions = servicesOptions;
+        _secrets = secrets;
+        _runner = runner;
         _logger = logger;
     }
 
@@ -62,7 +76,7 @@ public sealed class BackupEngine : IBackupEngine
         progress?.Invoke("Database backup", 10);
         var dbDir = Path.Combine(backupDir, "db");
         Directory.CreateDirectory(dbDir);
-        await BackupDatabaseAsync(dbDir, cancellationToken);
+        var dumpBytes = await BackupDatabaseAsync(dbDir, cancellationToken);
         files.AddRange(await CatalogFilesAsync(dbDir, backupDir, "db", cancellationToken));
 
         // Step 2: Configuration
@@ -246,12 +260,116 @@ public sealed class BackupEngine : IBackupEngine
         });
     }
 
-    private static Task BackupDatabaseAsync(string dbDir, CancellationToken ct)
+    /// <summary>
+    /// Dumps MySQL with <c>mysqldump</c>, and then proves the dump is readable.
+    ///
+    /// This replaced a method that wrote a text file containing the words
+    /// <c>-- MySQL dump placeholder</c>. Every backup this engine had ever "taken" would have
+    /// restored nothing, and the upgrade engine's rollback path depends on it — so a fake backup
+    /// is not a missing feature, it is a safety net that reports itself present.
+    ///
+    /// The flags are not decoration:
+    ///
+    ///   <c>--single-transaction</c>  a consistent snapshot without locking the whole database.
+    ///                                On InnoDB this is what lets a backup run while a PACS is
+    ///                                open; without it the counter stops for the duration.
+    ///   <c>--routines --triggers --events</c>
+    ///                                mysqldump omits all three by default. A restore missing
+    ///                                them succeeds, and the estate's stored logic is silently
+    ///                                gone until something calls it.
+    ///   <c>--set-gtid-purged=OFF</c>  a GTID header makes the dump unrestorable onto a server
+    ///                                with different replication state, which is every node.
+    ///   <c>--hex-blob</c>            binary columns survive a round-trip through a text dump.
+    /// </summary>
+    private async Task<long> BackupDatabaseAsync(string dbDir, CancellationToken ct)
     {
-        // TODO: Execute mysqldump or mysqlsh util.dumpInstance based on DB size
-        // For now, create placeholder
-        var placeholder = Path.Combine(dbDir, "mysql-dump.sql");
-        return File.WriteAllTextAsync(placeholder, "-- MySQL dump placeholder\n-- Actual implementation uses mysqldump or mysqlsh\n", ct);
+        var my = _servicesOptions.Value.MySql;
+        var dumpPath = Path.Combine(dbDir, "mysql-dump.sql");
+        var password = await _secrets.RetrieveAsync(RootPasswordSecretKey, ct);
+
+        var mysqldump = Path.Combine(
+            _installerOptions.Value.BinaryRoot, "current", "mysql", "bin",
+            OperatingSystem.IsWindows() ? "mysqldump.exe" : "mysqldump");
+
+        if (!File.Exists(mysqldump))
+        {
+            throw new InvalidOperationException(
+                $"Cannot back up: {mysqldump} was not found. A backup that cannot run must fail loudly — " +
+                "the upgrade engine treats a successful backup as permission to proceed.");
+        }
+
+        var arguments =
+            $"--host=127.0.0.1 --port={my.Port.ToString(CultureInfo.InvariantCulture)} --user=root " +
+            "--single-transaction --routines --triggers --events --set-gtid-purged=OFF --hex-blob " +
+            $"--result-file=\"{dumpPath}\" {my.DatabaseName}";
+
+        var environment = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (password is not null)
+        {
+            // Through the environment, never the command line: the process table is readable.
+            environment["MYSQL_PWD"] = password;
+        }
+
+        var result = await _runner.RunAsync(
+            mysqldump, arguments,
+            secrets: password is null ? null : [password],
+            environment: environment,
+            cancellationToken: ct);
+
+        if (!result.Succeeded)
+        {
+            throw new InvalidOperationException(
+                $"mysqldump failed with exit {result.ExitCode.ToString(CultureInfo.InvariantCulture)}. {result.CombinedOutput}");
+        }
+
+        return await AssertDumpIsCompleteAsync(dumpPath, ct);
+    }
+
+    /// <summary>
+    /// Proves the dump is whole, rather than trusting the exit code.
+    ///
+    /// The estate's rule, from <c>ops/README.md</c>: <i>"rc=0 is never the verdict"</i>. mysqldump
+    /// can exit 0 having written a truncated file — a full disk part-way through is the usual
+    /// way — and a truncated dump restores cleanly right up to the point it stops, leaving a
+    /// database that looks restored and is missing its last tables.
+    ///
+    /// mysqldump writes <c>-- Dump completed</c> as its final line. Its presence is the only
+    /// cheap evidence that the process reached the end.
+    /// </summary>
+    private static async Task<long> AssertDumpIsCompleteAsync(string dumpPath, CancellationToken ct)
+    {
+        if (!File.Exists(dumpPath))
+        {
+            throw new InvalidOperationException($"mysqldump reported success but wrote no file at {dumpPath}.");
+        }
+
+        var length = new FileInfo(dumpPath).Length;
+        if (length == 0)
+        {
+            throw new InvalidOperationException($"mysqldump reported success and wrote an empty file at {dumpPath}.");
+        }
+
+        // Read only the tail: these files reach gigabytes and the marker is at the end.
+        var tail = await ReadTailAsync(dumpPath, 4096, ct);
+        if (!tail.Contains("Dump completed", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"The dump at {dumpPath} does not end with mysqldump's completion marker, so it is truncated — " +
+                "most often a full disk. It is NOT a usable backup and nothing may treat it as one.");
+        }
+
+        return length;
+    }
+
+    private static async Task<string> ReadTailAsync(string path, int bytes, CancellationToken ct)
+    {
+        await using var stream = File.OpenRead(path);
+        var take = (int)Math.Min(bytes, stream.Length);
+        stream.Seek(-take, SeekOrigin.End);
+
+        var buffer = new byte[take];
+        await stream.ReadExactlyAsync(buffer, ct);
+        return System.Text.Encoding.UTF8.GetString(buffer);
     }
 
     private static Task BackupConfigAsync(string configDir, string dataRoot, CancellationToken ct)

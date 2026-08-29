@@ -5,6 +5,9 @@ using Installer.Actions.Topology;
 using Installer.Actions.Uninstall;
 using Installer.Core.Pipeline;
 using Installer.Core.Schema;
+using Installer.Core.Upgrade;
+using BackupRestore.Backup;
+using BackupRestore.Restore;
 using Installer.Core.SiteConfig;
 using Installer.Core.StateMachine;
 using ManifestVerifier;
@@ -45,6 +48,14 @@ public static class InstallerServiceCollectionExtensions
         // db/known-drift.txt, so an installer report and a verify-baseline-ddl.py report cannot
         // give a DBA two different answers about the same database.
         services.AddSingleton<ISchemaFingerprinter, MySqlSchemaFingerprinter>();
+
+        // Backup, restore and upgrade. Registered together because they are one mechanism: the
+        // upgrade's safety net IS the backup engine and its rollback path IS the restore engine,
+        // so a build that has one without the others has an upgrade with no way back.
+        services.AddSingleton<IBackupEngine, BackupEngine>();
+        services.AddSingleton<IRestoreEngine, RestoreEngine>();
+        services.AddSingleton<IServiceMapLoaderAdapter, InstalledServiceMapLoader>();
+        services.AddSingleton<IUpgradeEngine, UpgradeEngine>();
         services.AddSingleton<IInstallerPipeline, InstallerPipeline>();
 
         return services;

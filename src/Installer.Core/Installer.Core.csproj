@@ -6,6 +6,10 @@
          Acyclic: Installer.Actions and ManifestVerifier both depend only on SharedKernel. -->
     <ProjectReference Include="..\Installer.Actions\Installer.Actions.csproj" />
     <ProjectReference Include="..\ManifestVerifier\ManifestVerifier.csproj" />
+    <!-- The upgrade engine's safety net IS the backup engine, and its rollback path IS the
+         restore engine. Acyclic: BackupRestore depends only on SharedKernel and
+         Installer.Actions, both of which Installer.Core already references. -->
+    <ProjectReference Include="..\BackupRestore\BackupRestore.csproj" />
   </ItemGroup>
 
   <ItemGroup>

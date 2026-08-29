@@ -7,6 +7,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel\SharedKernel.csproj" />
+    <!-- IProcessRunner and the mysql/mysqldump invocation pattern, shared with the database
+         bootstrap so backup and bootstrap reach MySQL the same way. -->
+    <ProjectReference Include="..\Installer.Actions\Installer.Actions.csproj" />
   </ItemGroup>
 
 </Project>

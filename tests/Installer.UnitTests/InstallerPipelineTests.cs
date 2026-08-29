@@ -1,5 +1,7 @@
 using FluentAssertions;
 using Installer.Actions.Database;
+using Installer.Core.Upgrade;
+using BackupRestore.Restore;
 using Installer.Actions.Install;
 using Installer.Actions.Prechecks;
 using Installer.Actions.Topology;
@@ -33,6 +35,8 @@ public sealed class InstallerPipelineTests : IDisposable
     private readonly Mock<IServiceOrchestrator> _services = new();
     private readonly Mock<IOverrideTokenValidator> _tokens = new();
     private readonly Mock<IDatabaseBootstrapper> _database = new();
+    private readonly Mock<IUpgradeEngine> _upgrade = new();
+    private readonly Mock<IRestoreEngine> _restore = new();
     private ComponentsOptions _componentsOptions = new();
     private readonly List<IPrecheck> _prechecks = [];
 
@@ -55,6 +59,8 @@ public sealed class InstallerPipelineTests : IDisposable
             _services.Object,
             new UninstallAction(_services.Object, _tokens.Object, opts, NullLogger<UninstallAction>.Instance),
             _database.Object,
+            _upgrade.Object,
+            _restore.Object,
             opts,
             Microsoft.Extensions.Options.Options.Create(_componentsOptions),
             NullLogger<InstallerPipeline>.Instance);
@@ -117,8 +123,6 @@ public sealed class InstallerPipelineTests : IDisposable
     // ── Modes with no engine must fail, distinguishably ──────────────────────
 
     [Theory]
-    [InlineData(InstallerMode.Upgrade)]
-    [InlineData(InstallerMode.Restore)]
     [InlineData(InstallerMode.Repair)]
     [InlineData(InstallerMode.Backup)]
     public async Task A_mode_with_no_engine_reports_NotImplemented_and_never_success(InstallerMode mode)

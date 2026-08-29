@@ -185,4 +185,12 @@ internal static partial class LogEvents
     [LoggerMessage(EventId = 2151, Level = LogLevel.Warning,
         Message = "Service {Name} declares {Count} environment variable(s), but this platform is not Windows so they cannot be applied. On Windows this would be fatal: a service without ASPNETCORE_ENVIRONMENT serves the wrong state's configuration without failing.")]
     public static partial void ServiceEnvironmentUnsupported(ILogger logger, string name, int count);
+
+    [LoggerMessage(EventId = 2105, Level = LogLevel.Warning,
+        Message = "Completing a switch of current interrupted by an earlier run: {From} -> {To}.")]
+    public static partial void CompletingInterruptedSwitch(ILogger logger, string from, string to);
+
+    [LoggerMessage(EventId = 2106, Level = LogLevel.Warning,
+        Message = "An interrupted switch pointed at {Target}, which no longer exists. Leaving current where it is: a complete older release beats no release at all.")]
+    public static partial void SwitchIntentAbandoned(ILogger logger, string target);
 }

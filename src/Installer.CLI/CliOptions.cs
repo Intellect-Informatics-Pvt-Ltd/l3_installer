@@ -25,6 +25,9 @@ internal sealed class CliOptions
     public bool PurgeData { get; private set; }
     public string? ConfigPath { get; private set; }
     public string? MediaDirectory { get; private set; }
+
+    /// <summary>The backup to restore from. Required for --mode=restore; never guessed.</summary>
+    public string? BackupPath { get; private set; }
     public string? OverrideToken { get; private set; }
     public string? TypedConfirmation { get; private set; }
 
@@ -71,6 +74,7 @@ internal sealed class CliOptions
 
             case "config": ConfigPath = value; return value is not null;
             case "media": MediaDirectory = value; return value is not null;
+            case "backup": BackupPath = value; return value is not null;
             case "override-token": OverrideToken = value; return value is not null;
             case "confirm": TypedConfirmation = value; return value is not null;
 
@@ -118,6 +122,19 @@ internal sealed class CliOptions
             return;
         }
 
+        if (o.Mode == InstallerMode.Restore && o.BackupPath is null)
+        {
+            o.ParseError ??= "--mode=restore needs --backup=<path>. The installer will not guess which backup to " +
+                             "overwrite this node's data with.";
+            return;
+        }
+
+        if (o.BackupPath is not null && o.Mode != InstallerMode.Restore)
+        {
+            o.ParseError ??= "--backup is only valid with --mode=restore.";
+            return;
+        }
+
         if (o.Quiet && o.Verbose)
         {
             o.ParseError ??= "--quiet and --verbose contradict each other.";
@@ -138,6 +155,9 @@ internal sealed class CliOptions
           --config=<path>          Site configuration pack (.epcfg). Required for install.
           --media=<dir>            Directory holding the release manifest and payloads.
                                    Defaults to the manifest's own directory.
+          --backup=<path>          Restore only. The backup package to restore from. Required:
+                                   the installer will not guess which backup to overwrite this
+                                   node's data with.
           --apply                  Perform the operation. Without it, nothing is changed.
           --quiet                  No console output (for unattended rollout).
           --verbose                Debug-level logging.
@@ -167,5 +187,7 @@ internal sealed class CliOptions
           Installer.CLI --config=D:\site.epcfg --apply             # install
           Installer.CLI --quiet --config=D:\site.epcfg --apply     # unattended
           Installer.CLI --mode=uninstall --apply                   # remove, keep the data
+          Installer.CLI --mode=upgrade --media=E:\\media --apply    # upgrade, backing up first
+          Installer.CLI --mode=restore --backup=D:\\ePACSData\\backups\\bk-123 --apply
         """;
 }

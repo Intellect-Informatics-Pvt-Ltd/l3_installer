@@ -4,6 +4,8 @@ using Installer.Actions.Prechecks;
 using Installer.Actions.Topology;
 using Installer.Actions.Uninstall;
 using Installer.Core.StateMachine;
+using Installer.Core.Upgrade;
+using BackupRestore.Restore;
 using ManifestVerifier;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -40,6 +42,8 @@ public sealed class InstallerPipeline : IInstallerPipeline
     private readonly IServiceOrchestrator _services;
     private readonly UninstallAction _uninstall;
     private readonly IDatabaseBootstrapper _database;
+    private readonly IUpgradeEngine _upgrade;
+    private readonly IRestoreEngine _restore;
     private readonly IOptions<InstallerOptions> _options;
     private readonly IOptions<ComponentsOptions> _components;
     private readonly ILogger<InstallerPipeline> _logger;
@@ -66,6 +70,8 @@ public sealed class InstallerPipeline : IInstallerPipeline
         IServiceOrchestrator services,
         UninstallAction uninstall,
         IDatabaseBootstrapper database,
+        IUpgradeEngine upgrade,
+        IRestoreEngine restore,
         IOptions<InstallerOptions> options,
         IOptions<ComponentsOptions> components,
         ILogger<InstallerPipeline> logger)
@@ -83,6 +89,8 @@ public sealed class InstallerPipeline : IInstallerPipeline
         _services = services;
         _uninstall = uninstall;
         _database = database;
+        _upgrade = upgrade;
+        _restore = restore;
         _options = options;
         _components = components;
         _logger = logger;
@@ -115,13 +123,11 @@ public sealed class InstallerPipeline : IInstallerPipeline
                 InstallerMode.Install   => await RunInstallAsync(request, mode, steps, cancellationToken),
                 InstallerMode.Uninstall => await RunUninstallAsync(request, mode, steps, cancellationToken),
 
-                // These have interfaces and no implementing types. Saying so is the correct
-                // behaviour: see PipelineOutcome.NotImplemented.
-                InstallerMode.Upgrade => NotImplemented(mode, steps,
-                    "Upgrade is not implemented in this build. IUpgradeEngine has no implementation (tasks.md §17). " +
-                    "Do not treat this as an upgraded node."),
-                InstallerMode.Restore => NotImplemented(mode, steps,
-                    "Restore is not implemented in this build. IRestoreEngine has no implementation (tasks.md §16)."),
+                InstallerMode.Upgrade   => await RunUpgradeAsync(request, mode, steps, cancellationToken),
+                InstallerMode.Restore   => await RunRestoreAsync(request, mode, steps, cancellationToken),
+
+                // Still without an implementing type. Saying so is the correct behaviour: see
+                // PipelineOutcome.NotImplemented.
                 InstallerMode.Repair => NotImplemented(mode, steps,
                     "Repair is not implemented in this build (tasks.md §18)."),
                 InstallerMode.Backup => NotImplemented(mode, steps,
@@ -313,6 +319,75 @@ public sealed class InstallerPipeline : IInstallerPipeline
         return PipelineResult.Success(mode, InstallerPhase.Success, steps,
             $"Installed ePACS {manifest.Manifest.StackVersion} for PACS {request.SiteConfig.PacsId} ({request.SiteConfig.StateCode}); " +
             $"{dbResult.TablesAfter} tables in the database.");
+    }
+
+    // ── Upgrade ──────────────────────────────────────────────────────────────
+
+    private async Task<PipelineResult> RunUpgradeAsync(
+        PipelineRequest request, InstallerMode mode, List<string> steps, CancellationToken ct)
+    {
+        var opts = _options.Value;
+        var mediaDir = request.MediaDirectory
+            ?? Path.GetDirectoryName(Path.GetFullPath(opts.ManifestPath))
+            ?? Directory.GetCurrentDirectory();
+        var manifestPath = Path.IsPathRooted(opts.ManifestPath)
+            ? opts.ManifestPath
+            : Path.Combine(mediaDir, Path.GetFileName(opts.ManifestPath));
+
+        if (request.DryRun)
+        {
+            // The last honest stopping point. Everything the upgrade does after the backup
+            // changes the node, so a dry run reports the path and stops.
+            steps.Add("DRY RUN — an upgrade would verify the media, check the upgrade path, take and VERIFY a " +
+                      "mandatory pre-upgrade backup, stage the new release beside the old, stop services, migrate, " +
+                      "commit the switch, and restart. Re-run with --apply.");
+            return PipelineResult.Success(mode, InstallerPhase.Upgrade, steps, "Dry run complete. Nothing was changed.");
+        }
+
+        var result = await _upgrade.UpgradeAsync(manifestPath, mediaDir,
+            (message, percent) => steps.Add($"[{percent}%] {message}"), ct);
+
+        if (result.Success)
+        {
+            return PipelineResult.Success(mode, InstallerPhase.Success, steps,
+                $"Upgraded {result.PreviousVersion} to {result.NewVersion}. Pre-upgrade backup {result.PreUpgradeBackupId} retained.");
+        }
+
+        return PipelineResult.Failed(PipelineOutcome.OperationFailed, mode, InstallerPhase.Upgrade,
+            result.ErrorMessage ?? "The upgrade failed.", steps);
+    }
+
+    // ── Restore ──────────────────────────────────────────────────────────────
+
+    private async Task<PipelineResult> RunRestoreAsync(
+        PipelineRequest request, InstallerMode mode, List<string> steps, CancellationToken ct)
+    {
+        if (request.BackupPath is null)
+        {
+            return PipelineResult.Failed(PipelineOutcome.Refused, mode, InstallerPhase.Restore,
+                "No backup was named. A restore needs --backup=<path>; the installer will not guess which backup " +
+                "to overwrite this node's data with.", steps);
+        }
+
+        if (request.DryRun)
+        {
+            steps.Add($"DRY RUN — a restore from {request.BackupPath} would verify the package by hash, take a " +
+                      "safety backup of the CURRENT data, stop services, restore, count, and restart. " +
+                      "It would then require sync reconciliation. Re-run with --apply.");
+            return PipelineResult.Success(mode, InstallerPhase.Restore, steps, "Dry run complete. Nothing was changed.");
+        }
+
+        var result = await _restore.RestoreAsync(request.BackupPath, createSafetyBackup: true,
+            (message, percent) => steps.Add($"[{percent}%] {message}"), ct);
+
+        steps.AddRange(result.Warnings);
+
+        return result.Success
+            ? PipelineResult.Success(mode, InstallerPhase.Success, steps,
+                $"Restored from {result.BackupId}. Safety backup: {result.SafetyBackupId ?? "none"}. " +
+                "Sync state must be reconciled before this node resumes sending.")
+            : PipelineResult.Failed(PipelineOutcome.OperationFailed, mode, InstallerPhase.Restore,
+                result.ErrorMessage ?? "The restore failed.", steps);
     }
 
     // ── Uninstall ────────────────────────────────────────────────────────────
