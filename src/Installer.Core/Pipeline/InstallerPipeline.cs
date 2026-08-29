@@ -182,9 +182,13 @@ public sealed class InstallerPipeline : IInstallerPipeline
             ? opts.ManifestPath
             : Path.Combine(mediaDir, Path.GetFileName(opts.ManifestPath));
 
+        // The pin comes from THIS INSTALLER'S configuration, never from the manifest — see
+        // InstallerOptions.ExpectedSigningThumbprint for why a manifest-supplied thumbprint is
+        // worthless as a trust anchor.
         var verification = await _manifestVerifier.VerifyAsync(
             manifestPath, mediaDir,
             signaturePath: File.Exists(manifestPath + ".sig") ? manifestPath + ".sig" : null,
+            expectedThumbprint: opts.ExpectedSigningThumbprint,
             cancellationToken: ct);
 
         if (!verification.Valid || verification.Manifest is null)

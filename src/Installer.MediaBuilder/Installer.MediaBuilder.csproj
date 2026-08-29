@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel\SharedKernel.csproj" />
+    <!-- The builder VERIFIES with the same code the installer uses. That is the point: "it
+         verified at build time" then means exactly what "it will verify at install time" means. -->
+    <ProjectReference Include="..\ManifestVerifier\ManifestVerifier.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="YamlDotNet" />
+    <InternalsVisibleTo Include="Installer.UnitTests" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>epacs-media</AssemblyName>
+  </PropertyGroup>
+
+</Project>

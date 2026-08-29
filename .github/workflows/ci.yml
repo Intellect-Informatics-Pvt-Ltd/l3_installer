@@ -132,12 +132,36 @@ jobs:
             Select-Object FullName, @{n='MB';e={[math]::Round($_.Length/1MB,1)}} |
             Sort-Object MB -Descending | Format-Table -AutoSize
 
+      # W6 — the medium. This is the step that turns published binaries into something an
+      # operator could carry, and it VERIFIES the result with the installer's own verifier, so a
+      # green build and "the node will accept this" are the same statement.
+      #
+      # Unsigned here on purpose: the release certificate is not a CI secret on a public-facing
+      # workflow, and the builder exits 2 for an unsigned medium so this can never be mistaken
+      # for a releasable artefact. Signing belongs in the release pipeline, once the certificate
+      # has an owner (Gate G3).
+      - name: Assemble a release medium (unsigned — smoke, not release)
+        shell: pwsh
+        continue-on-error: false
+        run: |
+          dotnet run --project src/Installer.MediaBuilder -c Release -- `
+            build --spec samples/media-spec.yaml --out artifacts/medium --groups core --unsigned
+          # exit 2 means "built but unsigned", which is the expected outcome here.
+          if ($LASTEXITCODE -ne 2) { throw "expected exit 2 (built, unsigned); got $LASTEXITCODE" }
+
+      - name: Verify the assembled medium
+        shell: pwsh
+        run: |
+          dotnet run --project src/Installer.MediaBuilder -c Release -- verify --media artifacts/medium
+          if ($LASTEXITCODE -ne 0) { throw "the medium does not verify" }
+
       - name: Upload publish artefacts
         uses: actions/upload-artifact@v4
         with:
           name: win-x64-publish
           path: |
             artifacts/publish/**
+            artifacts/medium/**
             harness/publish/*.zip
           if-no-files-found: error
           retention-days: 14

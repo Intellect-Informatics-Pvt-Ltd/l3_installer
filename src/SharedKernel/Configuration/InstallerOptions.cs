@@ -49,6 +49,24 @@ public sealed class InstallerOptions
     public string? SiteConfigPath { get; set; }
 
     /// <summary>
+    /// The signing certificate this installer will accept, as a SHA-1 thumbprint.
+    ///
+    /// THE TRUST ANCHOR, and it lives here on purpose. It is fixed when the installer is built
+    /// and travels with the installer, not with the medium.
+    ///
+    /// It is deliberately NOT read from the release manifest's `signing_cert_thumbprint`. That
+    /// value is self-asserted: an attacker who re-signs a tampered manifest with their own key
+    /// writes their own thumbprint alongside it, and a check against it passes. The manifest's
+    /// declaration is compared and reported; this one decides.
+    ///
+    /// When null, verification falls back to full certificate-chain validation against the
+    /// machine's trust store — which is correct for a connected build machine and wrong for an
+    /// air-gapped node, where an internal chain is not present and a correctly-signed medium
+    /// would be refused with "certificate not trusted". Set it for anything that ships.
+    /// </summary>
+    public string? ExpectedSigningThumbprint { get; set; }
+
+    /// <summary>
     /// Resolved temp root (uses TempRoot if set, otherwise DataRoot\temp).
     /// </summary>
     public string ResolvedTempRoot => TempRoot ?? Path.Combine(DataRoot, "temp");

@@ -414,7 +414,12 @@ and the claim has to be updated with it — which is the point.
 
 ## Phase 4: Security Hardening
 
-- [ ] 24. Implement Signing and Verification Pipeline — **`ICodeSigner` declared; zero implementing types. 24.1–24.5 unimplemented.** Note this is the *producing* side; the *verifying* side (5.2 detached CMS) is real.
+- [~] 24. Implement Signing and Verification Pipeline
+  - [x] 24.1–24.3 `CmsCodeSigner` — detached CMS over the release manifest, SHA-256 pinned explicitly (the default has moved between .NET versions and a signature whose digest depends on the SDK is not reproducible), whole chain embedded (an offline node cannot fetch an intermediate from an AIA URL).
+  - [x] 24.4 Chain validation — with revocation deliberately **off**: a CRL or OCSP fetch cannot succeed on an air-gapped node, so revocation must be enforced where the medium is *built*, not where it is installed.
+  - [x] 24.5 Unit tests — 17, including every tamper case.
+  - [ ] **Authenticode over the outer package** — still unimplemented, still deferred to a WiX bootstrapper that does not exist (ADR-0001). Detached CMS over the manifest remains the only tamper-evidence in force.
+  - [ ] **The signing ceremony** — Gate G3. Who holds the EV certificate, where the key lives, who may invoke it. `CmsCodeSigner` is deliberately agnostic (a `Func<X509Certificate2?>`, so a PFX, an `X509Store` or an HSM/Key Vault CNG provider all work) precisely so that answer can change without touching code.
 
 - [ ] 25. Implement Access Control (ACL) Engine — **`IAclEngine` declared; zero implementing types. 25.1–25.5 unimplemented.**
 
@@ -478,6 +483,12 @@ and the claim has to be updated with it — which is the point.
   Still not covered, deliberately and stated rather than implied: the integration, chaos and
   long-offline suites need Docker and are not wired in (W9), and two of those projects are
   still empty.
+
+- [x] **X6 (NEW). The media pipeline — W6.** `src/Installer.MediaBuilder` (`epacs-media`): stage payloads, **measure** every SHA-256, write the manifest, sign it, and then verify the assembled medium with `ManifestVerificationService` — **the installer's own verifier, not a reimplementation**, so "the build passed" and "the node will accept this" are the same statement. CI assembles and verifies a medium on every run. 17 tests. Replaces `samples/release-manifest.yaml`, whose hashes were hand-typed for payloads no build produced.
+  - Composition comes from `samples/media-spec.yaml`, a reviewable file rather than command-line flags, filtered by the same component groups as the service map — so a disabled component is not carried at all.
+  - The output directory is **cleaned**, because a medium assembled over a previous build can carry a payload the manifest no longer lists: that verifies fine (verification checks listed payloads are present, not that present payloads are listed) and installs something nobody intended.
+  - The manifest is **byte-reproducible** — no build timestamp — so two runs of one release produce the same manifest and the same signature, and "did this medium change?" is answerable by comparing hashes.
+  - An unsigned build exits **2**, so a pipeline cannot mistake it for releasable.
 
 - [ ] **X4. A guard against this file drifting again.** A check that fails when an item is
   marked `[x]` and the type or file its evidence note names does not exist.

@@ -1,6 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <!-- Detached CMS signing and verification. ManifestVerifier already carries this for the
+         verifying half; SharedKernel needs it for the producing half (CmsCodeSigner). -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />
   </ItemGroup>
