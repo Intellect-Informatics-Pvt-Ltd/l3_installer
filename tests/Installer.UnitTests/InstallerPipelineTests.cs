@@ -81,6 +81,11 @@ public sealed class InstallerPipelineTests : IDisposable
         _verifier.Setup(v => v.VerifyAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new ManifestVerificationResult { Valid = true, Manifest = Manifest });
 
+    private void GivenConfigGenerates() =>
+        _config.Setup(c => c.GenerateAllAsync(It.IsAny<SiteConfigPack>(), It.IsAny<string>(), It.IsAny<string>(),
+                                              It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<CancellationToken>()))
+               .ReturnsAsync(new ConfigGenerationResult { GeneratedFiles = ["appsettings.json"], TokensResolved = 12 });
+
     private void GivenDatabaseCanBootstrap() =>
         _database.Setup(d => d.PlanAsync(It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new DatabaseBootstrapPlan
@@ -198,6 +203,7 @@ public sealed class InstallerPipelineTests : IDisposable
     public async Task A_warning_precheck_does_not_block()
     {
         GivenVerificationSucceeds();
+        GivenConfigGenerates();
         GivenDatabaseCanBootstrap();
         GivenDatabaseExecutes();
         GivenTopology();
@@ -214,6 +220,7 @@ public sealed class InstallerPipelineTests : IDisposable
     public async Task Dry_run_verifies_and_prechecks_but_touches_nothing()
     {
         GivenVerificationSucceeds();
+        GivenConfigGenerates();
         GivenDatabaseCanBootstrap();
         GivenDatabaseExecutes();
         GivenTopology(3);
@@ -253,6 +260,7 @@ public sealed class InstallerPipelineTests : IDisposable
     public async Task Apply_runs_every_step_in_order_and_checkpoints()
     {
         GivenVerificationSucceeds();
+        GivenConfigGenerates();
         GivenDatabaseCanBootstrap();
         GivenDatabaseExecutes();
         GivenTopology(2);
@@ -260,7 +268,9 @@ public sealed class InstallerPipelineTests : IDisposable
         _dataRootInit.Setup(d => d.InitializeAsync(It.IsAny<CancellationToken>())).Callback(() => order.Add("dataroot")).Returns(Task.CompletedTask);
         _payloads.Setup(p => p.ExtractAllAsync(It.IsAny<ReleaseManifest>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Action<int, int, string>>(), It.IsAny<CancellationToken>())).Callback(() => order.Add("extract")).Returns(Task.CompletedTask);
         _binaries.Setup(b => b.DeployAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).Callback(() => order.Add("deploy")).Returns(Task.CompletedTask);
-        _config.Setup(c => c.GenerateAllAsync(It.IsAny<SiteConfigPack>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).Callback(() => order.Add("config")).Returns(Task.CompletedTask);
+        _config.Setup(c => c.GenerateAllAsync(It.IsAny<SiteConfigPack>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<CancellationToken>()))
+               .Callback(() => order.Add("config"))
+               .ReturnsAsync(new ConfigGenerationResult { GeneratedFiles = ["appsettings.json"], TokensResolved = 12 });
         _services.Setup(s => s.RegisterAllAsync(It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<CancellationToken>())).Callback(() => order.Add("register")).Returns(Task.CompletedTask);
         _services.Setup(s => s.StartAllAsync(It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<CancellationToken>())).Callback(() => order.Add("start")).Returns(Task.CompletedTask);
 
@@ -283,6 +293,7 @@ public sealed class InstallerPipelineTests : IDisposable
         // Health verification is unimplemented (tasks.md 13.3). Reporting success is honest
         // only because the message says what was NOT checked.
         GivenVerificationSucceeds();
+        GivenConfigGenerates();
         GivenDatabaseCanBootstrap();
         GivenDatabaseExecutes();
         GivenTopology();

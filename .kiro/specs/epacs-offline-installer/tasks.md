@@ -16,7 +16,11 @@
 > - `[~]` — **partial**; the artefact exists but does not yet do the job (evidence note says how)
 > - `[ ]` — **not implemented**; no code exists
 >
-> **Framework maturity:** ~11,400 LOC, **120 installer tests + 16 harness contract tests**, 0
+> **All four structural gaps (F1-F4) are closed as of 2026-08-29.** What remains is scope, not
+> shape: the payload bundling, the upgrade/restore/repair engines, and the runtime-target
+> decision that F3 forces.
+>
+> **Framework maturity:** ~12,300 LOC, **138 installer tests + 16 harness contract tests**, 0
 > integration tests. **The product runs end to end** as of 2026-08-29: verification, prechecks,
 > topology load, install and uninstall execute through a composed pipeline with a checkpoint at
 > every phase. Payload bundling, the database bootstrap, and the upgrade/restore/repair engines
@@ -40,7 +44,7 @@ can accept the L2-R2 stack. Each is expanded in the phases below.
 | ~~**F1**~~ | ~~No composition root.~~ **CLOSED 2026-08-29.** `Installer.Core/DependencyInjection/AddInstaller()` assembles the graph; `Installer.Core/Pipeline/InstallerPipeline` drives verify → precheck → topology → install → checkpoint; `Installer.CLI` builds the host and maps outcomes to exit codes. **The product now runs end to end.** | Closed. See "F1 closure" below for the four defects the first execution exposed. | 12.x |
 | ~~**F2**~~ | ~~No loader for the canonical service map.~~ **CLOSED 2026-08-29.** `Installer.Actions/Topology/ServiceMapLoader` (YamlDotNet), 17 tests, two of them contract tests against the maps that ship. | Closed. The pipeline loads the topology before the first mutation, so a bad map fails while the machine is still clean. | 8.6, 8.7 |
 | ~~**F3**~~ | ~~No database bootstrap.~~ **CLOSED 2026-08-29** for install. `Installer.Actions/Database/MySqlBootstrapper` initialises the data directory, writes `my.ini`, sets the root password from a generated secret, creates the application and health-check accounts, imposes `stable_baseline_ddl.sql`, and **counts before and after**. Guarded by `TableNameCaseGuard`, which refuses outright where the estate's `lower_case_table_names=0` cannot be honoured. *(15.2 — the backup dump — is still a placeholder and is separate.)* | Closed for install. **The guard is where the runtime-target decision bites hardest — see below.** | 8.11, 15.2 |
-| **F4** | **No config templates.** `ConfigGenerator` scans for `*.template.*`; **no such file exists in the repository**. `ServicesOptions` is a fixed six-property class (MySql, Cache, Eventing, Web, Sync, Agent) with no collection, so it cannot describe N application services. | Site-specific configuration generation is implemented but inert, and cannot express a multi-service payload. | 2.3, 2.8, 8.5 |
+| ~~**F4**~~ | ~~No config templates.~~ **CLOSED 2026-08-29.** `ServicesOptions.Applications` is a keyed collection, so N services are expressible; `ConfigGenerator` addresses any of them as `${Service:<name>:Port}`; `packaging/config-templates/appsettings.Site.template.json` exists and is contract-tested. Unresolved tokens are now **fatal**. | Closed. **All four structural gaps are now closed** — see "F4 closure" below for the three defects it exposed. | 2.3, 2.8, 8.5 |
 
 ---
 
@@ -72,6 +76,61 @@ was invisible precisely because nothing had ever run.**
 
 4. **The `.epcfg` was never opened.** Every site-specific value the installer claimed to honour
    came from a default, including the PacsId it would have installed under.
+
+## F4 closure — and where it bites
+
+F4 removed the last structural ceiling: the configuration model could name one application, and
+L2-R2 is twenty-six. Three things came out of building it.
+
+### 1. Every path token produced invalid JSON
+
+`${DataRoot}` expands to `D:\ePACSData`. Substituted raw into a JSON string that becomes
+`"D:\ePACSData\\logs"` — and `\e` is not a valid escape, so **the whole file fails to parse**.
+Every path token on the target platform hit this, and the first thing that would have noticed is
+a service refusing to start on a node in a village.
+
+Found by a test asserting the shipped template's Serilog path — which is exactly the class of
+defect that only appears once something actually runs the code. Values are now JSON-escaped
+where the output is JSON, the generated file is **parsed before it is written**, and non-JSON
+outputs (`my.ini`, `kafka.properties`, `garnet.conf`) are deliberately left unescaped.
+
+### 2. The installer could not tell a service which state it serves
+
+`ASPNETCORE_ENVIRONMENT=<STATE>` selects `appsettings.<STATE>.json` inside every L2-R2 service.
+It is the entire mechanism by which one codebase serves every state, and the estate's own
+systemd template says what happens when it is wrong: *"Getting it wrong does not fail — it runs
+the wrong state's configuration, silently, which is far worse."*
+
+**This installer had no way to express it.** `ServiceMapEntry` had no environment field, and
+`sc.exe` has no verb for environment variables — the Service Control Manager reads them from a
+`REG_MULTI_SZ` value under the service's own registry key. Now implemented, and a failure to
+apply them aborts registration rather than leaving a service that starts and serves the wrong
+state.
+
+### 3. The log path override is mandatory, not advisory — and this is the bite
+
+Roughly fifteen L2-R2 source files hardcode a Linux path as a **fallback**, e.g.
+`l3_PACDetailsAPI/Common/Constants/AppConstants.cs:8` and `l3_FAS/FAS/Program.cs:283`:
+
+```csharp
+var filePath = serilogFile.GetValue<string>("Path") ?? "/data/L3-logs/r2-dev/l3_FAS/fas.log";
+```
+
+Being a fallback is what makes it dangerous. On Windows with no override the service **does not
+fail** — it resolves a path that cannot exist and logging silently stops. The first anyone knows
+is a support bundle with no application logs in it, taken because something else went wrong.
+
+So `appsettings.Site.template.json` must set `Serilog:WriteTo` for every service on every node,
+and a test asserts the shipped template does. But note what that means: **the installer is
+compensating in configuration for a hardcoded assumption in twenty-six modules.** That works,
+and it is the right thing to do now, but it is a workaround. The modules should take their log
+root from configuration with no platform-specific literal behind it — which is module work in
+the L2-R2 estate, not installer work.
+
+The same applies to the two report controllers that shell out to `/bin/bash` under an nginx
+`/app` layout (`l3_FAS/.../FASReports.cs:922`). No configuration can compensate for that one.
+
+---
 
 ## F3 — where the runtime-target decision bites
 
@@ -185,12 +244,12 @@ and the claim has to be updated with it — which is the point.
 - [~] 2. Define configuration models and appsettings schema
   - [x] 2.1 InstallerOptions (DataRoot, BinaryRoot, TempRoot, StateFile)
   - [x] 2.2 PrecheckOptions
-  - [~] 2.3 ServicesOptions — **fixed six-property shape. No collection of application services, so a payload with N services cannot be described. See F4.**
+  - [x] 2.3 ServicesOptions — infrastructure stays named (a buffer pool is not a heap size is not a chunk size), and `Applications` is a case-insensitive keyed collection of `ApplicationServiceOptions` (port, start order, account, optional health path). The old fixed shape could describe the stand-in payload in `harness/`; it could not describe 26 services, which made it a hard ceiling on the whole bundling intent.
   - [x] 2.4 MonitoringOptions
   - [x] 2.5 BackupOptions
   - [x] 2.6 LogRotationOptions
   - [x] 2.7 appsettings.json + appsettings.Production.json
-  - [ ] 2.8 appsettings.template.json — **no `*.template.*` file exists anywhere in the repo. `ConfigGenerator` therefore has nothing to act on. See F4.**
+  - [x] 2.8 `packaging/config-templates/appsettings.Site.template.json` — the site overlay an ERP service reads. Contract-tested: a test resolves the shipped template end to end and fails if any token in it is one the generator cannot supply. The old `appsettings.Production.json` used `${epcfg:...}` tokens but was never named `*.template.*`, so it had been inert since it was written; it is now retired in place with a note explaining why.
 
 - [x] 3. Define core data contracts
   - [x] 3.1 ReleaseManifest · [x] 3.2 SiteConfigPack · [x] 3.3 ServiceMap · [x] 3.4 InstallationState · [x] 3.5 HealthCheckResult
@@ -231,11 +290,12 @@ and the claim has to be updated with it — which is the point.
   - [ ] 8.2 NTFS ACL application — **`DataRootInitializer.cs:10` says "handled separately"; `IAclEngine` has no implementation.**
   - [x] 8.3 Payload extraction, resumable via a progress manifest
   - [x] 8.4 Binary deployment, side-by-side `releases/<ver>/` + `current` link — *note: the flip is delete-then-create, which is **not** the atomic commit the design claims; see 17.6*
-  - [~] 8.5 Config generation from templates — **`ConfigGenerator` is implemented and generic (token substitution, atomic write-then-rename), but no template file exists for it to process. Inert until 2.8.**
+  - [x] 8.5 Config generation from templates — reworked. Four token namespaces (`${DataRoot}`, `${epcfg:field}`, `${Services:MySql:Port}`, `${Service:l3_FAS:Port}`), values JSON-escaped where the output is JSON, the result parsed before it is written, and **an unresolved token aborts generation** listing every one at once. Previously it logged a warning and left `${...}` in the file.
   - [x] 8.6 Windows service registration from a service map, with recovery actions
   - [x] 8.7 Service start in dependency order
   - [ ] 8.8 Firewall rules — **`IFirewallManager` has no implementation.**
   - [ ] 8.9 Windows Update reboot suppression — **no code.**
+  - [x] **8.12 (NEW) Per-service environment variables.** `ServiceMapEntry.Environment`, parsed by the topology loader and applied by `ServiceOrchestrator.ApplyEnvironmentAsync`. **This is the state-selection mechanism and the installer had no way to express it at all**: `ASPNETCORE_ENVIRONMENT=<STATE>` selects `appsettings.<STATE>.json` inside every L2-R2 service. Note `sc.exe` has no verb for environment variables — the Service Control Manager reads them from a `REG_MULTI_SZ` value under the service's own registry key, so that is what is written. A failure to set them **aborts registration**: a service that starts without its environment serves the wrong state's configuration and never fails.
   - [ ] 8.10 Integration tests for fresh install — **`Installer.IntegrationTests/UnitTest1.cs` is one placeholder fact.**
   - [x] **8.11 Database bootstrap.** `Installer.Actions/Database/`. Ordered by what is irreversible: refuse if the volume cannot host `lower_case_table_names=0` → write `my.ini` → initialise (**irreversible**) → start → set root password → create accounts → impose `db/stable_baseline_ddl.sql` → count. 20 tests.
     - **Counted, never assumed.** The bootstrap fails if the table count did not move after applying the baseline. `ops/README.md` states the rule and why: *"this estate has twice had a seed return rc=0 while landing zero rows."* A MySQL client exiting 0 having applied nothing is exactly that.

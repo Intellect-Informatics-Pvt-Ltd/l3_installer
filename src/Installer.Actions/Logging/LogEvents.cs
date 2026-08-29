@@ -177,4 +177,12 @@ internal static partial class LogEvents
     [LoggerMessage(EventId = 2502, Level = LogLevel.Information,
         Message = "Baseline imposed on {Database}: {Before} -> {After} tables.")]
     public static partial void BaselineImposed(ILogger logger, string database, int before, int after);
+
+    [LoggerMessage(EventId = 2150, Level = LogLevel.Information,
+        Message = "Applied {Count} environment variable(s) to service {Name}.")]
+    public static partial void ServiceEnvironmentApplied(ILogger logger, string name, int count);
+
+    [LoggerMessage(EventId = 2151, Level = LogLevel.Warning,
+        Message = "Service {Name} declares {Count} environment variable(s), but this platform is not Windows so they cannot be applied. On Windows this would be fatal: a service without ASPNETCORE_ENVIRONMENT serves the wrong state's configuration without failing.")]
+    public static partial void ServiceEnvironmentUnsupported(ILogger logger, string name, int count);
 }

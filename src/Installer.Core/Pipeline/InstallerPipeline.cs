@@ -278,12 +278,15 @@ public sealed class InstallerPipeline : IInstallerPipeline
         steps.Add($"Deployed version {manifest.Manifest.StackVersion} and switched 'current'.");
 
         await _stateMachine.TransitionAsync(InstallerPhase.Install, "config", cancellationToken: ct);
-        await _configGenerator.GenerateAllAsync(
+        // The topology is passed in so templates can address any of the N application services
+        // by name (${Service:l3_FAS:Port}), not just the four infrastructure ports.
+        var configResult = await _configGenerator.GenerateAllAsync(
             request.SiteConfig,
             Path.Combine(mediaDir, "config-templates"),
             Path.Combine(opts.DataRoot, "config"),
+            services,
             ct);
-        steps.Add("Generated site configuration from templates.");
+        steps.Add($"Generated {configResult.GeneratedFiles.Count} config file(s), {configResult.TokensResolved} token(s) resolved.");
 
         await _stateMachine.TransitionAsync(InstallerPhase.Migrate, "database", cancellationToken: ct);
         var baselineDdl = Path.Combine(mediaDir, "db", "stable_baseline_ddl.sql");

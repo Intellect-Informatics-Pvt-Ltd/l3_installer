@@ -18,6 +18,23 @@ public sealed record ServiceMapEntry
     public required ServiceHealthCheck HealthCheck { get; init; }
     public required ServiceRecovery Recovery { get; init; }
     public string[] DataDirectories { get; init; } = [];
+
+    /// <summary>
+    /// Environment variables the service runs with.
+    ///
+    /// WHY THIS MATTERS MORE THAN IT LOOKS. In L2-R2 this is the entire state-selection
+    /// mechanism: `ASPNETCORE_ENVIRONMENT=&lt;STATE&gt;` selects `appsettings.&lt;STATE&gt;.json`
+    /// inside every service, and that is how one codebase serves every state. The estate's own
+    /// systemd template says it plainly — *"Getting it wrong does not fail: it runs the wrong
+    /// state's configuration, silently, which is far worse."*
+    ///
+    /// Until 2026-08-29 this installer had no way to express it at all, so a Windows PACS node
+    /// would have run every service under the compiled-in default. Note that `sc.exe` cannot
+    /// set environment variables — see `ServiceOrchestrator.ApplyEnvironmentAsync` for how
+    /// they actually reach a Windows service.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> Environment { get; init; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
 }
 
 public sealed record ServiceHealthCheck

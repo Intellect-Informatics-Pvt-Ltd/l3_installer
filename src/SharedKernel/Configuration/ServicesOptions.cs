@@ -14,6 +14,62 @@ public sealed class ServicesOptions
     public WebServiceOptions Web { get; set; } = new();
     public SyncServiceOptions Sync { get; set; } = new();
     public AgentServiceOptions Agent { get; set; } = new();
+
+    /// <summary>
+    /// The application services this payload contains, keyed by service name.
+    ///
+    /// WHY A DICTIONARY AND NOT MORE NAMED PROPERTIES. Until 2026-08-29 this class had exactly
+    /// six fixed properties — MySql, Cache, Eventing, Web, Sync, Agent — and `Web` was a single
+    /// entry representing "the application". That shape can describe the stand-in payload in
+    /// `harness/`. It cannot describe L2-R2, which is **26 services** (25 middleware plus the
+    /// ERPClient UI, per `ops/ansible/group_vars/all.yml`), each with its own port, its own
+    /// service account and its own start order.
+    ///
+    /// A fixed shape was therefore a hard ceiling on the whole bundling intent: no amount of
+    /// work elsewhere could have pointed the chassis at the real stack while the configuration
+    /// model could only name one application.
+    ///
+    /// The infrastructure services above stay named, because each genuinely has different
+    /// settings — a buffer pool is not a heap size is not a chunk size. Only the application
+    /// tier is homogeneous enough to be a collection.
+    ///
+    /// Case-insensitive on purpose: configuration keys arrive from JSON, environment variables
+    /// and a service map, and `l3_FAS` / `l3_fas` naming the same service in two of them is a
+    /// mistake nobody would find quickly.
+    /// </summary>
+    public Dictionary<string, ApplicationServiceOptions> Applications { get; set; } =
+        new(StringComparer.OrdinalIgnoreCase);
+}
+
+/// <summary>
+/// One application service in the payload. Deliberately small: anything that belongs to the
+/// service's own configuration lives in its appsettings, not here. This carries only what the
+/// INSTALLER needs to place, register and address it.
+/// </summary>
+public sealed class ApplicationServiceOptions
+{
+    /// <summary>The HTTP port it binds. Substituted into templates as ${Service:&lt;name&gt;:Port}.</summary>
+    public int Port { get; set; }
+
+    /// <summary>
+    /// Start order, mirroring the estate's own tiering: master-data services must be listening
+    /// before the modules that resolve masters through them, or the first requests after a
+    /// restart fail in ways that look like data problems. Shutdown walks this backwards.
+    /// </summary>
+    public int StartOrder { get; set; } = 30;
+
+    /// <summary>Windows service account. Least privilege; not LocalSystem for an app service.</summary>
+    public string ServiceAccount { get; set; } = "ePACSAppSvc";
+
+    /// <summary>
+    /// Health endpoint path, if the service has one.
+    ///
+    /// Nullable because in L2-R2 today most do not: 7 of 26 services expose any health endpoint
+    /// and **none** expose the `/health/live` and `/health/ready` this installer's service map
+    /// is written against. A null here means the installer cannot gate on readiness for that
+    /// service and must say so rather than assume it is up.
+    /// </summary>
+    public string? HealthPath { get; set; }
 }
 
 public sealed class MySqlServiceOptions

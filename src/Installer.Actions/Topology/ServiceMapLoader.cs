@@ -146,7 +146,10 @@ public sealed class ServiceMapLoader : IServiceMapLoader
             StartupType = string.IsNullOrWhiteSpace(raw.StartupType) ? "Automatic" : raw.StartupType,
             HealthCheck = healthCheck,
             Recovery = ToRecovery(raw.Recovery),
-            DataDirectories = raw.DataDirectories?.ToArray() ?? []
+            DataDirectories = raw.DataDirectories?.ToArray() ?? [],
+            Environment = raw.Environment is null
+                ? new Dictionary<string, string>(StringComparer.Ordinal)
+                : new Dictionary<string, string>(raw.Environment, StringComparer.Ordinal)
         };
     }
 
@@ -231,6 +234,12 @@ public sealed class ServiceMapLoader : IServiceMapLoader
         public RawHealthCheck? HealthCheck { get; set; }
         public RawRecovery? Recovery { get; set; }
         public List<string>? DataDirectories { get; set; }
+
+        /// <summary>
+        /// `environment:` — a plain key/value map. Carries ASPNETCORE_ENVIRONMENT, which is how
+        /// a service is told which state it is serving.
+        /// </summary>
+        public Dictionary<string, string>? Environment { get; set; }
     }
 
     private sealed class RawHealthCheck

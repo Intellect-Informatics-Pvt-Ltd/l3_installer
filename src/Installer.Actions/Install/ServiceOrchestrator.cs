@@ -106,8 +106,58 @@ public sealed class ServiceOrchestrator : IServiceOrchestrator
             await RunScCommandAsync($"description {service.Name} \"{service.Description}\"", ct);
         }
 
+        await ApplyEnvironmentAsync(service, ct);
+
         // Configure recovery actions
         await ConfigureRecoveryAsync(service, ct);
+    }
+
+    /// <summary>
+    /// Gives a Windows service its environment variables.
+    ///
+    /// WHY THIS IS NOT AN sc.exe CALL. `sc.exe` has no verb for environment variables — it can
+    /// set the binary path, the account, the start type and the recovery actions, and nothing
+    /// else. The Service Control Manager reads a service's environment from a REG_MULTI_SZ
+    /// value named `Environment` under its own registry key, so that is what this writes.
+    ///
+    /// WHY IT MATTERS. `ASPNETCORE_ENVIRONMENT` is how an L2-R2 service is told which state it
+    /// is serving: it selects `appsettings.&lt;STATE&gt;.json`. Getting it wrong does not fail —
+    /// the service starts and runs another state's configuration. Getting it MISSING does not
+    /// fail either, which is why this method exists at all: before it, every service on a
+    /// Windows node would have run under the compiled-in default with nothing to indicate it.
+    /// </summary>
+    private async Task ApplyEnvironmentAsync(ServiceMapEntry service, CancellationToken ct)
+    {
+        if (service.Environment.Count == 0)
+        {
+            return;
+        }
+
+        if (!OperatingSystem.IsWindows())
+        {
+            // Not silently skipped. On any other platform the environment cannot be applied,
+            // and a service running without ASPNETCORE_ENVIRONMENT is a service serving the
+            // wrong state's configuration - the one failure mode that produces no error.
+            LogEvents.ServiceEnvironmentUnsupported(_logger, service.Name, service.Environment.Count);
+            return;
+        }
+
+        // REG_MULTI_SZ: NAME=VALUE entries separated by \0 on the reg.exe command line.
+        var entries = string.Join("\\0", service.Environment.Select(kv => $"{kv.Key}={ResolveTokens(kv.Value)}"));
+        var key = $@"HKLM\SYSTEM\CurrentControlSet\Services\{service.Name}";
+
+        var result = await RunProcessAsync("reg.exe", $"add \"{key}\" /v Environment /t REG_MULTI_SZ /d \"{entries}\" /f", ct);
+
+        if (result.ExitCode != 0)
+        {
+            // Fatal. A service registered without its environment is worse than one that failed
+            // to register: it starts, it looks healthy, and it serves the wrong state.
+            throw new InvalidOperationException(
+                $"Could not set environment variables for service {service.Name} (exit {result.ExitCode}): {result.Output}. " +
+                "The service would start under the wrong state's configuration without failing, so registration is aborted.");
+        }
+
+        LogEvents.ServiceEnvironmentApplied(_logger, service.Name, service.Environment.Count);
     }
 
     private static async Task ConfigureRecoveryAsync(ServiceMapEntry service, CancellationToken ct)
@@ -204,11 +254,19 @@ public sealed class ServiceOrchestrator : IServiceOrchestrator
         return result;
     }
 
-    private static async Task<ScResult> RunScCommandAsync(string arguments, CancellationToken ct)
+    private static Task<ScResult> RunScCommandAsync(string arguments, CancellationToken ct) =>
+        RunProcessAsync("sc.exe", arguments, ct);
+
+    /// <summary>
+    /// Runs a Windows service-management tool. Generalised from the sc.exe-only helper because
+    /// environment variables need reg.exe: the Service Control Manager reads them from the
+    /// registry and sc.exe has no verb for them.
+    /// </summary>
+    private static async Task<ScResult> RunProcessAsync(string fileName, string arguments, CancellationToken ct)
     {
         var psi = new ProcessStartInfo
         {
-            FileName = "sc.exe",
+            FileName = fileName,
             Arguments = arguments,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -219,7 +277,7 @@ public sealed class ServiceOrchestrator : IServiceOrchestrator
         using var process = Process.Start(psi);
         if (process is null)
         {
-            return new ScResult { ExitCode = -1, Output = "Failed to start sc.exe" };
+            return new ScResult { ExitCode = -1, Output = $"Failed to start {fileName}" };
         }
 
         var output = await process.StandardOutput.ReadToEndAsync(ct);
