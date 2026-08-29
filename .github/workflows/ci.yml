@@ -113,14 +113,18 @@ jobs:
         shell: pwsh
         run: ./harness/scripts/publish-win-x64.ps1 -CreateZip
 
-      - name: Publish installer CLI (self-contained win-x64)
+      # The installer CLI stays SELF-CONTAINED, deliberately, and it is the one thing that
+      # should be: it is what runs before any runtime has been installed on the node. Everything
+      # it installs is framework-dependent per ADR-0009; the bootstrap itself cannot be.
+      - name: Publish installer CLI (self-contained win-x64 — the bootstrap exception)
         shell: pwsh
         run: >
           dotnet publish src/Installer.CLI/Installer.CLI.csproj -c Release -r win-x64
           --self-contained true -p:PublishSingleFile=true -o artifacts/publish/installer
 
       # Size is a shipping constraint, not trivia: this goes onto a USB stick carried to a
-      # rural site. Print it every run so growth is visible in the log before it is a problem.
+      # rural site, and ADR-0009 turns on a 2.6 GB measurement. Print it every run so growth is
+      # visible in the log before it is a problem.
       - name: Report artefact sizes
         shell: pwsh
         run: |

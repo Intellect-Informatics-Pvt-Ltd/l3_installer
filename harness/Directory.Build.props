@@ -32,32 +32,33 @@
        the IsPublishable=false condition below.
        ═══════════════════════════════════════════════════════════════════════════ -->
   <!--
-    RuntimeIdentifier is deliberately NOT set here (changed 2026-08-29). It used to be, under
-    a plain `Configuration == Release` condition, which made every Release BUILD produce
-    win-x64 output - including test projects, which inherit the RID through their
-    ProjectReference to Harness.Common. The visible symptom was that `dotnet test -c Release`
-    aborted on any non-Windows host with
+    PUBLISH PROFILE — framework-dependent. See ADR-0009, which supersedes ADR-0007 §1.
 
-        Could not find 'dotnet' host for the 'X64' architecture.
+    ADR-0007 chose self-contained single-file, and it was right for the payload it was written
+    against: four harness services. Measured on the real payload of 26 L2-R2 services, that
+    costs 4.0 GB against 1.4 GB — 2.6 GB of the same .NET runtime, bundled twenty-six times,
+    onto a medium carried by hand to a village. It also made delta upgrades impractical: every
+    patch shipped a runtime whether or not it changed.
 
-    so the harness tests could only be run in Release on Windows, and the Linux leg of CI
-    would have failed on its first run.
+    Offline-first is unaffected. The runtime still arrives on the medium, as its own manifest
+    payload verified by SHA-256 like MySQL or the JRE — it arrives once instead of per service.
 
-    A RID belongs to `dotnet publish`, not to `dotnet build`: a build should be
-    platform-neutral and a publish should be platform-targeted. The RID is now passed by the
-    two things that actually produce a payload - `harness/scripts/publish-win-x64.ps1` and the
-    publish job in `.github/workflows/ci.yml` - both with `-r win-x64`.
-
-    The properties below are publish-only and have no effect on a build, so they stay here:
-    that keeps ADR-0007 §1's intent (one place describes how the payload is shaped) without
-    making every Release build Windows-specific.
+    RuntimeIdentifier is deliberately NOT set here either. Under a blanket
+    `Configuration == Release` it made every Release BUILD win-x64, including test projects,
+    which inherit the RID through their ProjectReference to Harness.Common — so
+    `dotnet test -c Release` aborted on any non-Windows host. A RID belongs to `dotnet publish`,
+    not `dotnet build`; it is passed by publish-win-x64.ps1 and the CI publish job.
   -->
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <SelfContained>true</SelfContained>
-    <PublishSingleFile>true</PublishSingleFile>
-    <PublishTrimmed>false</PublishTrimmed>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <SelfContained>false</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+
+    <!--
+      Pin roll-forward to the band that was tested. The default would let a node silently run a
+      newer runtime than anything this release was verified against — on a machine nobody
+      administers and which nobody will visit again soon.
+    -->
+    <RollForward>LatestPatch</RollForward>
   </PropertyGroup>
 
   <!-- Libraries are not publishable as standalone EXEs -->

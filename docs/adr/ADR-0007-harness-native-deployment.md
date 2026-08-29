@@ -1,6 +1,6 @@
 # ADR-0007: Harness Native Windows Deployment via Offline Installer
 
-**Status:** **Partially implemented** — see Implementation status, added 2026-08-29  
+**Status:** **Partially implemented; §1 SUPERSEDED by [ADR-0009](ADR-0009-framework-dependent-payload.md)**  
 **Date:** 2026-05-15 · **Status revised:** 2026-08-29  
 **Deciders:** Architecture team  
 **Relates to:** Design Overview §14.3, §23.5, §29 (M12)
@@ -155,7 +155,7 @@ When the installer CLI receives `--demo`:
 
 | Decision | Status | Evidence |
 |---|---|---|
-| §1 Self-contained single-file `win-x64` publish | **Built, verified** | Produces a 53 MB single-file `.exe` on .NET 10 (this ADR estimated ~80 MB on .NET 8 — compression improved). **Amended 2026-08-29:** `RuntimeIdentifier` is no longer set in `harness/Directory.Build.props`; it is passed by the publish step. The blanket `Configuration == Release` condition made every Release *build* win-x64, including test projects, which inherit the RID through their `ProjectReference` to `Harness.Common` — so `dotnet test -c Release` aborted on any non-Windows host with *"Could not find 'dotnet' host for the 'X64' architecture"*. A RID belongs to `dotnet publish`, not `dotnet build`. `SelfContained`, `PublishSingleFile` and compression stay in the props file, since they are publish-only and have no build effect. |
+| §1 Self-contained single-file `win-x64` publish | **SUPERSEDED by ADR-0009** — measured at 26 services it costs 2.6 GB of duplicated runtime and makes delta upgrades impractical. The reasoning here was sound for a 4-service harness and does not survive the real payload. Previously: **built, verified** | Produces a 53 MB single-file `.exe` on .NET 10 (this ADR estimated ~80 MB on .NET 8 — compression improved). **Amended 2026-08-29:** `RuntimeIdentifier` is no longer set in `harness/Directory.Build.props`; it is passed by the publish step. The blanket `Configuration == Release` condition made every Release *build* win-x64, including test projects, which inherit the RID through their `ProjectReference` to `Harness.Common` — so `dotnet test -c Release` aborted on any non-Windows host with *"Could not find 'dotnet' host for the 'X64' architecture"*. A RID belongs to `dotnet publish`, not `dotnet build`. `SelfContained`, `PublishSingleFile` and compression stay in the props file, since they are publish-only and have no build effect. |
 | §2 Two payload ZIPs (PACS / NLDR) | **Now built in CI** *(2026-08-29)* | `.github/workflows/ci.yml` runs `publish-win-x64.ps1 -CreateZip` on a Windows runner, uploads both ZIPs as artefacts, and prints their sizes each run. Still open: `harness/packaging/installer-manifest-stub.yaml` carries `sha256: PLACEHOLDER_COMPUTED_BY_CI` and nothing yet writes the real hashes back — that belongs with the media pipeline (tasks.md W6). |
 | §3 Service map with dependency ordering | **Built** | `harness/packaging/service-map.yaml` exists and `HarnessServiceMapLoader` parses it |
 | §4 Configuration generation from `.epcfg` | **Not reachable** | `HarnessConfigGenerator` is implemented, but nothing calls it: `Installer.CLI` never loads the `.epcfg` and there is no composition root (tasks.md F1) |
