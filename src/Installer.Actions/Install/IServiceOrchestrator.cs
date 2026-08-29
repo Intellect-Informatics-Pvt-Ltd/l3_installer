@@ -3,8 +3,16 @@ using SharedKernel.Contracts;
 namespace Installer.Actions.Install;
 
 /// <summary>
-/// Orchestrates Windows service registration, start, stop, and deregistration.
-/// Service topology is driven entirely by service-map.yaml — no hardcoded service names.
+/// Registers, starts, stops and removes the payload's services.
+///
+/// Two implementations, chosen by platform at composition time:
+/// <see cref="ServiceOrchestrator"/> (Windows, <c>sc.exe</c> plus a registry write for the
+/// environment) and <see cref="SystemdServiceOrchestrator"/> (Debian, unit files plus
+/// <c>systemctl</c>) — per ADR-0010.
+///
+/// The topology is the same object on both: one <c>service-map.yaml</c> describes the payload
+/// and each orchestrator renders it into what its own service manager understands. Nothing above
+/// this interface knows which platform it is on, which is what keeps the pipeline single-source.
 /// </summary>
 public interface IServiceOrchestrator
 {

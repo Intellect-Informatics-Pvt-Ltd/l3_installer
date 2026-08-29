@@ -109,7 +109,30 @@ public static class InstallerServiceCollectionExtensions
         services.AddSingleton<IPayloadExtractor, PayloadExtractor>();
         services.AddSingleton<IBinaryDeployer, BinaryDeployer>();
         services.AddSingleton<IConfigGenerator, ConfigGenerator>();
-        services.AddSingleton<IServiceOrchestrator, ServiceOrchestrator>();
+        // PLATFORM SELECTION — ADR-0010.
+        //
+        // The only place in the product that branches on the operating system. Everything above
+        // IServiceOrchestrator works with a service map and does not know or care which service
+        // manager will receive it; that is what keeps one pipeline serving both targets.
+        //
+        // It throws on an unsupported platform rather than defaulting to either. A default here
+        // would mean a macOS developer's run silently exercising the Windows path and appearing
+        // to work, which is precisely the class of "green on my machine" this repository has
+        // already been bitten by twice.
+        if (OperatingSystem.IsWindows())
+        {
+            services.AddSingleton<IServiceOrchestrator, ServiceOrchestrator>();
+        }
+        else if (OperatingSystem.IsLinux())
+        {
+            services.AddSingleton<IServiceOrchestrator, SystemdServiceOrchestrator>();
+        }
+        else
+        {
+            // Throws when USED, not when resolved — so the graph still validates and a dry run
+            // still works on a developer's machine. See the type's own remarks.
+            services.AddSingleton<IServiceOrchestrator, UnsupportedPlatformServiceOrchestrator>();
+        }
 
         // The database bootstrap - the reason the framework exists. ProcessRunner is the only
         // seam that touches an external binary; everything that decides WHAT to run is pure.

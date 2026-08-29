@@ -13,11 +13,16 @@ namespace Installer.Actions.Install;
 public sealed class ServiceOrchestrator : IServiceOrchestrator
 {
     private readonly IOptions<InstallerOptions> _options;
+    private readonly IOptions<ServicesOptions> _services;
     private readonly ILogger<ServiceOrchestrator> _logger;
 
-    public ServiceOrchestrator(IOptions<InstallerOptions> options, ILogger<ServiceOrchestrator> logger)
+    public ServiceOrchestrator(
+        IOptions<InstallerOptions> options,
+        IOptions<ServicesOptions> services,
+        ILogger<ServiceOrchestrator> logger)
     {
         _options = options;
+        _services = services;
         _logger = logger;
     }
 
@@ -246,13 +251,17 @@ public sealed class ServiceOrchestrator : IServiceOrchestrator
         _logger.LogWarning("Timeout waiting for service {Name} to reach state {State}.", serviceName, expectedState);
     }
 
-    private string ResolveTokens(string input)
-    {
-        var result = input;
-        result = result.Replace("${BinaryRoot}", _options.Value.BinaryRoot, StringComparison.OrdinalIgnoreCase);
-        result = result.Replace("${DataRoot}", _options.Value.DataRoot, StringComparison.OrdinalIgnoreCase);
-        return result;
-    }
+    /// <summary>
+    /// Substitutes via the shared vocabulary. This used to handle ${BinaryRoot} and ${DataRoot}
+    /// only, which meant ePACSWeb was registered with a literal ${Services:Web:HttpsPort} as its
+    /// --urls value and MySQL's health check pinged a port of the same name. See
+    /// <see cref="InstallerTokenMap"/>.
+    /// </summary>
+    private string ResolveTokens(string input) =>
+        InstallerTokenMap.Resolve(
+            input,
+            InstallerTokenMap.BuildInfrastructure(_options.Value, _services.Value),
+            "Service map entry");
 
     private static Task<ScResult> RunScCommandAsync(string arguments, CancellationToken ct) =>
         RunProcessAsync("sc.exe", arguments, ct);

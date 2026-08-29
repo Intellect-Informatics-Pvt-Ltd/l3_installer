@@ -111,13 +111,13 @@ public sealed partial class ConfigGenerator : IConfigGenerator
         var opts = _installerOptions.Value;
         var svc = _servicesOptions.Value;
         var c = CultureInfo.InvariantCulture;
-        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            // Installer paths
-            ["DataRoot"] = opts.DataRoot,
-            ["BinaryRoot"] = opts.BinaryRoot,
-            ["TempRoot"] = opts.ResolvedTempRoot,
+        // Seeded from the shared vocabulary so the generator and the service orchestrators
+        // cannot disagree about what ${Services:...} means - which is exactly how the
+        // orchestrator came to leave those tokens unresolved.
+        var map = InstallerTokenMap.BuildInfrastructure(opts, svc);
 
+        foreach (var (k, v) in new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
             // Site identity, by the .epcfg's own JSON field names
             ["epcfg:pacs_id"] = site.PacsId,
             ["epcfg:state_code"] = site.StateCode,
@@ -127,17 +127,10 @@ public sealed partial class ConfigGenerator : IConfigGenerator
             ["epcfg:nldr_endpoint"] = site.NldrEndpoint ?? "",
             ["epcfg:nldr_client_cert_thumbprint"] = site.NldrClientCertThumbprint ?? "",
             ["epcfg:attachment_quota_gb"] = site.AttachmentQuotaGb.ToString(c),
-
-            // Infrastructure
-            ["Services:MySql:Port"] = svc.MySql.Port.ToString(c),
-            ["Services:MySql:DatabaseName"] = svc.MySql.DatabaseName,
-            ["Services:MySql:ApplicationUser"] = svc.MySql.ApplicationUser,
-            ["Services:Cache:Port"] = svc.Cache.Port.ToString(c),
-            ["Services:Eventing:Port"] = svc.Eventing.Port.ToString(c),
-            ["Services:Web:HttpsPort"] = svc.Web.HttpsPort.ToString(c),
-            ["Services:Sync:HealthPort"] = svc.Sync.HealthPort.ToString(c),
-            ["Services:Agent:HealthPort"] = svc.Agent.HealthPort.ToString(c),
-        };
+        })
+        {
+            map[k] = v;
+        }
 
         // Site-supplied port overrides. The .epcfg may pin ports for a site whose network
         // already uses the defaults; when it does, it wins over the installer's own options.
