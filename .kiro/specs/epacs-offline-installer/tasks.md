@@ -16,10 +16,11 @@
 > - `[~]` — **partial**; the artefact exists but does not yet do the job (evidence note says how)
 > - `[ ]` — **not implemented**; no code exists
 >
-> **Framework maturity:** ~8,900 LOC, **38 installer tests + 16 harness contract tests**, 0
-> integration tests. Verification, state machine, prechecks, service orchestration, topology
-> loading and binary deployment are real. The composition root, the payload bundling, the
-> database bootstrap, and the upgrade/restore/repair engines are not.
+> **Framework maturity:** ~10,200 LOC, **99 installer tests + 16 harness contract tests**, 0
+> integration tests. **The product runs end to end** as of 2026-08-29: verification, prechecks,
+> topology load, install and uninstall execute through a composed pipeline with a checkpoint at
+> every phase. Payload bundling, the database bootstrap, and the upgrade/restore/repair engines
+> are still absent — and the CLI now says so, with a distinct exit code, instead of returning 0.
 >
 > **Technology baseline (2026-08-29):** aligned to `r2-dev-stable`. **.NET 10** (`net10.0`, SDK
 > pinned 10.0.302 via `global.json` — the same pin as the L2-R2 workspace), central package
@@ -36,10 +37,65 @@ can accept the L2-R2 stack. Each is expanded in the phases below.
 
 | # | Gap | Why it blocks the intent | Task refs |
 |---|---|---|---|
-| **F1** | **No composition root.** `Installer.CLI/Program.cs:37` is `// TODO: Wire up full installer pipeline with DI`. Nine libraries, nothing assembles them. | The framework has never executed end-to-end, so no claim below has been proven at runtime. | 12.x |
-| **F2** | **No loader for the canonical service map.** `samples/service-map.yaml` has no parser. The only loader is `HarnessServiceMapLoader` — a hand-rolled, line-based parser bound to the harness's `group:` filtering, while `ManifestVerifier` already depends on YamlDotNet. | The chassis cannot read its own topology file, so it cannot be pointed at a 26-service stack without new code. | 8.6, 8.7 |
+| ~~**F1**~~ | ~~No composition root.~~ **CLOSED 2026-08-29.** `Installer.Core/DependencyInjection/AddInstaller()` assembles the graph; `Installer.Core/Pipeline/InstallerPipeline` drives verify → precheck → topology → install → checkpoint; `Installer.CLI` builds the host and maps outcomes to exit codes. **The product now runs end to end.** | Closed. See "F1 closure" below for the four defects the first execution exposed. | 12.x |
+| ~~**F2**~~ | ~~No loader for the canonical service map.~~ **CLOSED 2026-08-29.** `Installer.Actions/Topology/ServiceMapLoader` (YamlDotNet), 17 tests, two of them contract tests against the maps that ship. | Closed. The pipeline loads the topology before the first mutation, so a bad map fails while the machine is still clean. | 8.6, 8.7 |
 | **F3** | **No database bootstrap.** Nothing runs `mysqld --initialize`, writes `my.ini`, sets the root password, or creates the `healthcheck` user that `samples/service-map.yaml` pings. `BackupEngine.BackupDatabaseAsync` writes a text file that says "MySQL dump placeholder". | "Bundle the DB so nothing sits outside and nothing gets tampered with" is the reason this framework exists, and it is the part with no implementation. | 8.x (new 8.11), 15.2 |
 | **F4** | **No config templates.** `ConfigGenerator` scans for `*.template.*`; **no such file exists in the repository**. `ServicesOptions` is a fixed six-property class (MySql, Cache, Eventing, Web, Sync, Agent) with no collection, so it cannot describe N application services. | Site-specific configuration generation is implemented but inert, and cannot express a multi-service payload. | 2.3, 2.8, 8.5 |
+
+---
+
+## F1 closure — what running it for the first time exposed
+
+The composition root landed on 2026-08-29 and the product executed end to end for the first
+time. Four defects surfaced within minutes, all of them in code that had been marked complete.
+They are recorded here because the pattern matters more than the individual fixes: **every one
+was invisible precisely because nothing had ever run.**
+
+1. **`ValidateOnBuild` refused to build the container.** `IInstallerStateMachine` was registered
+   as a singleton, but its constructor takes an `InstallerMode` and a target version — runtime
+   values that come from `ModeDetector` and the verified manifest. Replaced with
+   `IInstallerStateMachineFactory`, created once the mode and version are known.
+
+   This forced a correction that turned out to matter on its own: **verification now precedes
+   the first checkpoint.** The checkpoint stamps the target version and a recovery run reads
+   that field to decide what to resume, so the version must come from a manifest whose signature
+   and hashes have already been checked. Nothing has changed on the machine during verification,
+   so there is nothing to lose by having no checkpoint yet.
+
+2. **The concurrency guard did not guard.** See §6.4 — it never owned the mutex, and threw on
+   release every single run.
+
+3. **`/mode:upgrade` returned exit 0.** Having done nothing at all. On a PACS node that reads as
+   "upgrade succeeded", and the next thing anyone does is decommission the old media. Modes with
+   no engine now return **exit 4** with a message naming the missing engine and its task number.
+   Backup says explicitly that a backup taken now would restore nothing.
+
+4. **The `.epcfg` was never opened.** Every site-specific value the installer claimed to honour
+   came from a default, including the PacsId it would have installed under.
+
+### What the pipeline will not do
+
+Worth stating positively, because refusing is most of what an installer should be good at:
+
+| Situation | Outcome | Reason |
+|---|---|---|
+| Another installer holds the lock | 5, names the holder's PID | Two processes registering services is unrecoverable |
+| Payload fails signature or hash | 2, before anything is touched | The only tamper-evidence in force (ADR-0001) |
+| Any blocking precheck | 1, before anything is touched | A half-installed node is worse than none |
+| Malformed service map | 2, before anything is touched | Loaded ahead of the first mutation on purpose |
+| Mode with no engine | 4 | Never 0 — see defect 3 above |
+| Install with no `.epcfg` | 5 | The node would install under a defaulted identity |
+| Unsigned `.epcfg` | 64 unless explicitly allowed | It decides identity, data root, ports, backup targets |
+| Purge without token + typed confirmation | 64 at the prompt | Caught before anything is stopped |
+| Purge with a token | Refused by `DenyAllOverrideTokenValidator` | Validation is unimplemented; a permissive stub would expose an irreversible operation before its gate was written |
+| Anything, without `--apply` | Dry run, 0 | Dry run is the default |
+
+### Honesty carried in the output
+
+The installer reports, in its own operator-facing text, that health verification is not
+implemented and that a service starting without error is not the same as a service being
+healthy. There is a test asserting that sentence is present. When §13.3 lands, the test fails
+and the claim has to be updated with it — which is the point.
 
 ---
 
@@ -86,7 +142,7 @@ can accept the L2-R2 stack. Each is expanded in the phases below.
 
 - [~] 6. Implement Installer.Core state machine
   - [x] 6.1 State enum · [x] 6.2 Checkpoint persistence (fsync'd state.json) · [x] 6.3 Recovery mode
-  - [x] 6.4 Concurrent execution guard (`Global\` mutex, stale-PID detection)
+  - [x] 6.4 Concurrent execution guard — **rewritten 2026-08-29, because the original did not guard.** It used `new Mutex(initiallyOwned: false, ...)` and treated `createdNew == true` as "acquired". That constructor creates the mutex *without owning it*, so nothing was ever held and two installers would both have proceeded to register services. Because nothing was owned, `ReleaseMutex()` then threw on **every** run — caught and logged as a warning, which is how a guard that never worked stayed invisible for a year. Now an exclusive lock file (`FileShare.None`, the only share mode that excludes on Unix as well as Windows) with the holder's PID in a readable sidecar. 7 tests.
   - [x] 6.5 Mode detection (fresh/upgrade/repair from junction target)
   - [ ] 6.6 Unit tests for state transitions, checkpoint persistence, recovery — **no state machine test file exists.**
 
@@ -94,7 +150,7 @@ can accept the L2-R2 stack. Each is expanded in the phases below.
   - [x] 7.1 OS version · [x] 7.2 Disk space · [x] 7.3 RAM · [x] 7.4 Port availability · [x] 7.5 Admin rights · [x] 7.6 Pending reboot
   - [ ] 7.7 AV exclusion detection — **no class.**
   - [x] 7.8 Existing installation detection — implemented in `ModeDetector`, not as an `IPrecheck`
-  - [ ] 7.9 `.epcfg` signature validation — **`SiteConfigPack.Signature` is carried but never verified by anything.** This is a security gap, not just a missing feature: an unsigned site config is accepted today.
+  - [~] 7.9 `.epcfg` signature validation — **presence is now gated; cryptographic verification is not.** `SiteConfigLoader` refuses a pack whose signature is absent or is the sample's `BASE64_ENCODED_SIGNATURE_PLACEHOLDER`, unless `--allow-unsigned-config` is passed (which logs a warning naming the risk). Real verification needs a canonical serialisation of the document minus the signature field, plus a byte-oriented overload on `ISignatureVerifier`, which today takes file paths. **Do not tick this until that exists** — the current gate stops an accident, not an attacker.
   - [ ] 7.10 Temp staging relocation — **`ResolvedTempRoot` is a default path; there is no threshold check and no relocation.**
   - [~] 7.11 Unit tests per precheck — **5 facts in `PrecheckRunnerTests`; the individual checks are not covered.**
 
@@ -129,18 +185,19 @@ can accept the L2-R2 stack. Each is expanded in the phases below.
   - [~] 11.7 Encrypted ZIP packaging — **`ZipFile.CreateFromDirectory`, plaintext. No encryption.**
   - [ ] 11.8 Unit tests for redaction and packaging
 
-- [~] 12. Implement Installer.CLI (silent mode) — **F1: this is the blocking item for the whole framework**
-  - [x] 12.1 CLI argument parser (`/quiet`, `/config:`, `/mode:`, `/demo`, `/harness-service-map:`)
-  - [ ] 12.2 `.epcfg` loading and validation — **the path is parsed and printed; the file is never opened.**
-  - [~] 12.3 Exit code mapping — **constants defined, but dispatch is by `ex.Message.Contains("precheck")` string matching, and the success path always returns 0 without doing anything.**
-  - [ ] 12.4 File-only logging in quiet mode — **writes to `Console` unconditionally.**
-  - [ ] 12.5 Integration tests for silent install
-  - [ ] **12.6 (NEW) Composition root.** A DI container that assembles verification → precheck → install → health into an executing pipeline. Until this exists, nothing above has run end-to-end even once.
+- [~] 12. Implement Installer.CLI (silent mode)
+  - [x] 12.1 CLI argument parser — rewritten as a testable `CliOptions` type. Accepts both `/flag:value` and `--flag=value`; an unrecognised argument is an **error**, never ignored (a silently dropped `--apply` means an operator believes they installed something and did not). 16 tests.
+  - [x] 12.2 `.epcfg` loading and validation — `Installer.Core/SiteConfig/SiteConfigLoader`. Validates required fields and constrains the `state_code` shape, because that value becomes `ASPNETCORE_ENVIRONMENT` in every service and a wrong one runs another state's configuration *without failing*. 12 tests.
+  - [x] 12.3 Exit code mapping — from a `PipelineOutcome` enum, not from string-matching exception messages. Added **4 (mode not implemented)** and **5 (refused)**; 64 usage, 130 cancelled. Every code is documented in `--help`, and a test asserts that.
+  - [~] 12.4 File-only logging in quiet mode — **quiet now genuinely emits nothing**, but there is still no file sink. Wiring Serilog via `Intellect.Erp.Observability` remains open; telling an operator to "see the log file" when none exists would be worse than saying there is none yet.
+  - [ ] 12.5 Integration tests for silent install — still none; needs a VM (W9).
+  - [x] **12.6 Composition root.** `AddInstaller()` + `InstallerPipeline`, built with `ValidateOnBuild` — which caught a real defect on its first run. See F1 closure.
+  - [x] **12.7 (NEW) Dry run is the default.** Every mode reports what it would do and changes nothing until `--apply`, mirroring the estate's own `ops/l2r2` contract. The pipeline stops at the last read-only point — after verification, prechecks and topology load.
 
 - [~] 13. Implement health endpoints and smoke test
   - [~] 13.1 Health endpoint contract — **defined in the service map as `/health/live` + `/health/ready`. No payload in this repository or in L2-R2 serves those paths.**
   - [~] 13.2 Smoke test runner — **`HarnessSmokeTest` polls health endpoints. It does not create/verify/delete a test record as AC-1.8 requires.**
-  - [ ] 13.3 Health check aggregator
+  - [ ] 13.3 Health check aggregator — the pipeline reaches the Health phase and states plainly, in its own operator-facing output, that health verification is not implemented and that a service starting without error is not the same as a service being healthy. A test asserts that sentence is present, so the claim changes on the day the aggregator lands.
   - [ ] 13.4 Unit tests for health aggregation
 
 - [~] 14. Create AGENTS.md and documentation

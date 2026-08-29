@@ -1,0 +1,123 @@
+using Installer.Actions.Install;
+using Installer.Actions.Prechecks;
+using Installer.Actions.Topology;
+using Installer.Actions.Uninstall;
+using Installer.Core.Pipeline;
+using Installer.Core.SiteConfig;
+using Installer.Core.StateMachine;
+using ManifestVerifier;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Configuration;
+
+namespace Installer.Core.DependencyInjection;
+
+/// <summary>
+/// The composition root.
+///
+/// Everything the installer can do is registered here, in one place, so the question "what does
+/// this product actually consist of?" has a file to point at. Before this existed,
+/// <c>Installer.CLI</c> carried the comment <c>// TODO: Wire up full installer pipeline with
+/// DI</c> and nine libraries sat unassembled.
+/// </summary>
+public static class InstallerServiceCollectionExtensions
+{
+    /// <summary>
+    /// Registers every installer component and binds its configuration.
+    /// </summary>
+    public static IServiceCollection AddInstaller(this IServiceCollection services, IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        AddOptions(services, configuration);
+        AddVerification(services);
+        AddPrechecks(services);
+        AddInstallActions(services);
+        AddStateMachine(services);
+
+        services.AddSingleton<ISiteConfigLoader, SiteConfigLoader>();
+        services.AddSingleton<IInstallerPipeline, InstallerPipeline>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Options are bound with ValidateOnStart so a malformed appsettings fails at startup with
+    /// the offending section named, rather than surfacing three phases in as a null path.
+    /// </summary>
+    private static void AddOptions(IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddOptions<InstallerOptions>()
+            .Bind(configuration.GetSection(InstallerOptions.SectionName))
+            .ValidateOnStart();
+
+        services.AddOptions<PrecheckOptions>()
+            .Bind(configuration.GetSection(PrecheckOptions.SectionName))
+            .ValidateOnStart();
+
+        services.AddOptions<ServicesOptions>()
+            .Bind(configuration.GetSection(ServicesOptions.SectionName))
+            .ValidateOnStart();
+
+        services.AddOptions<MonitoringOptions>()
+            .Bind(configuration.GetSection(MonitoringOptions.SectionName))
+            .ValidateOnStart();
+
+        services.AddOptions<BackupOptions>()
+            .Bind(configuration.GetSection(BackupOptions.SectionName))
+            .ValidateOnStart();
+    }
+
+    private static void AddVerification(IServiceCollection services)
+    {
+        services.AddSingleton<IManifestParser, ManifestParser>();
+        services.AddSingleton<IHashVerifier, HashVerifier>();
+        services.AddSingleton<ISignatureVerifier, SignatureVerifier>();
+        services.AddSingleton<IManifestVerificationService, ManifestVerificationService>();
+    }
+
+    /// <summary>
+    /// Registered as IPrecheck so PrecheckRunner receives all of them and orders by Order.
+    /// Adding a check means adding one line here and nothing else — which is the point, but
+    /// also the risk: a check that is written and not registered simply never runs, and its
+    /// absence looks exactly like a pass. PrecheckRegistrationTests guards that.
+    /// </summary>
+    private static void AddPrechecks(IServiceCollection services)
+    {
+        services.AddSingleton<IPrecheck, OsVersionCheck>();
+        services.AddSingleton<IPrecheck, DiskSpaceCheck>();
+        services.AddSingleton<IPrecheck, RamCheck>();
+        services.AddSingleton<IPrecheck, PortAvailabilityCheck>();
+        services.AddSingleton<IPrecheck, AdminRightsCheck>();
+        services.AddSingleton<IPrecheck, PendingRebootCheck>();
+        services.AddSingleton<PrecheckRunner>();
+    }
+
+    private static void AddInstallActions(IServiceCollection services)
+    {
+        services.AddSingleton<IServiceMapLoader, ServiceMapLoader>();
+        services.AddSingleton<IDataRootInitializer, DataRootInitializer>();
+        services.AddSingleton<IPayloadExtractor, PayloadExtractor>();
+        services.AddSingleton<IBinaryDeployer, BinaryDeployer>();
+        services.AddSingleton<IConfigGenerator, ConfigGenerator>();
+        services.AddSingleton<IServiceOrchestrator, ServiceOrchestrator>();
+
+        // Uninstall's governance gate. IOverrideTokenValidator has no real implementation
+        // (tasks.md 9.5), so the registered one REFUSES every token rather than accepting them:
+        // a purge must be impossible until the validator is real, not accidentally permitted by
+        // a stub that returns true.
+        services.AddSingleton<IOverrideTokenValidator, DenyAllOverrideTokenValidator>();
+        services.AddSingleton<UninstallAction>();
+    }
+
+    private static void AddStateMachine(IServiceCollection services)
+    {
+        // A factory, not the machine itself: the mode and target version are runtime values
+        // (ModeDetector and the verified manifest), so the container cannot construct it. This
+        // was caught by ValidateOnBuild the first time the CLI ran - see the factory's remarks.
+        services.AddSingleton<IInstallerStateMachineFactory, InstallerStateMachineFactory>();
+        services.AddSingleton<ModeDetector>();
+        services.AddSingleton<InstallerLock>();
+    }
+}

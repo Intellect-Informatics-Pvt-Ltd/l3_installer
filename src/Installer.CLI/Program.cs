@@ -1,193 +1,211 @@
-﻿using SharedKernel.Contracts;
+using Installer.Core.DependencyInjection;
+using Installer.Core.Pipeline;
+using Installer.Core.SiteConfig;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using SharedKernel.Contracts;
 
 namespace Installer.CLI;
 
 /// <summary>
-/// ePACS Installer CLI — Silent/unattended mode entry point.
-/// Usage: Installer.CLI.exe /quiet /config:&lt;path-to-epcfg&gt; [/mode:install|upgrade|repair|uninstall] [/demo]
+/// ePACS Installer CLI — the entry point for every installer operation.
 ///
-/// Exit codes:
-///   0 = Success
-///   1 = Precheck failure (blocking prerequisite not met)
-///   2 = Install/upgrade failure
-///   3 = Health check failure (services not healthy after install)
-///  99 = Unknown/unhandled error
+/// This file used to be a <c>Console.WriteLine</c> and
+/// <c>// TODO: Wire up full installer pipeline with DI</c>: it parsed arguments, printed them,
+/// and returned 0. It now builds the composition root, runs the pipeline, and maps the outcome
+/// onto an exit code.
+///
+/// TWO BEHAVIOURS WORTH KNOWING ABOUT BEFORE YOU RUN IT:
+///
+/// 1. <b>Dry run is the default.</b> Every mode reports what it would do and changes nothing
+///    until <c>--apply</c> is passed. This mirrors the estate's own <c>ops/l2r2</c> contract,
+///    and it means the safe invocation is the short one.
+///
+/// 2. <b>A mode with no engine fails, loudly.</b> Upgrade, restore, repair and backup exit 4
+///    rather than 0. The previous behaviour — <c>/mode:upgrade</c> returning success having
+///    done nothing — is the single most dangerous thing this program used to do, because the
+///    next action after a successful upgrade is to decommission the old media.
 /// </summary>
 public static class Program
 {
     public static async Task<int> Main(string[] args)
     {
-        var options = ParseArguments(args);
+        var options = CliOptions.Parse(args);
 
         if (options.ShowHelp)
         {
-            PrintUsage();
-            return 0;
+            Console.WriteLine(CliOptions.Usage);
+            return ExitCodes.Success;
         }
+
+        if (options.ParseError is not null)
+        {
+            Console.Error.WriteLine($"error: {options.ParseError}");
+            Console.Error.WriteLine("Run with --help for usage.");
+            return ExitCodes.Usage;
+        }
+
+        using var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) =>
+        {
+            // Cancel cooperatively. The state machine has checkpointed every phase, so an
+            // interrupted run resumes; killing the process outright would leave the lock held.
+            e.Cancel = true;
+            Console.Error.WriteLine("Interrupt received — finishing the current step and stopping. The run is resumable.");
+            cts.Cancel();
+        };
 
         try
         {
-            Console.WriteLine($"ePACS Installer CLI — Mode: {options.Mode}, Quiet: {options.Quiet}, Demo: {options.Demo}");
+            using var provider = BuildProvider(options);
+            var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("Installer.CLI");
 
+            SiteConfigPack? siteConfig = null;
             if (options.ConfigPath is not null)
             {
-                Console.WriteLine($"Config: {options.ConfigPath}");
+                var loader = provider.GetRequiredService<ISiteConfigLoader>();
+                siteConfig = await loader.LoadAsync(options.ConfigPath, options.AllowUnsignedConfig, cts.Token);
             }
 
-            // TODO: Wire up full installer pipeline with DI
-            // For now, validate arguments and return success
-            if (options.Mode == InstallerMode.Install)
+            var request = new PipelineRequest
             {
-                Console.WriteLine("Fresh install mode selected.");
+                Mode = options.Mode,
+                SiteConfig = siteConfig,
+                MediaDirectory = options.MediaDirectory,
+                PurgeData = options.PurgeData,
+                OverrideToken = options.OverrideToken,
+                TypedConfirmation = options.TypedConfirmation,
+                DryRun = !options.Apply
+            };
 
-                if (options.Demo)
-                {
-                    Console.WriteLine("Demo mode: NLDR-side harness services will also be installed.");
-                }
-            }
+            var pipeline = provider.GetRequiredService<IInstallerPipeline>();
+            var result = await pipeline.RunAsync(request, cts.Token);
 
-            await Task.CompletedTask; // Placeholder for async pipeline
-
-            return ExitCodes.Success;
+            Report(result, options.Quiet);
+            return ExitCodes.From(result.Outcome);
         }
-        catch (Exception ex) when (ex.Message.Contains("precheck", StringComparison.OrdinalIgnoreCase))
+        catch (SiteConfigException ex)
         {
-            if (!options.Quiet)
-            {
-                Console.Error.WriteLine($"Precheck failed: {ex.Message}");
-            }
-
-            return ExitCodes.PrecheckFailure;
+            Console.Error.WriteLine($"Site configuration: {ex.Message}");
+            return ExitCodes.Usage;
         }
-        catch (Exception ex) when (ex.Message.Contains("install", StringComparison.OrdinalIgnoreCase))
+        catch (OperationCanceledException)
         {
-            if (!options.Quiet)
-            {
-                Console.Error.WriteLine($"Install failed: {ex.Message}");
-            }
-
-            return ExitCodes.InstallFailure;
+            Console.Error.WriteLine("Cancelled. The run is checkpointed and can be resumed by invoking the same command again.");
+            return ExitCodes.Cancelled;
         }
-        catch (Exception ex)
+#pragma warning disable CA1031 // Top of the process: an unhandled exception here would print a
+        catch (Exception ex) // stack trace to a field operator and return an undefined code.
+#pragma warning restore CA1031
         {
-            if (!options.Quiet)
-            {
-                Console.Error.WriteLine($"Unexpected error: {ex.Message}");
-            }
-
+            Console.Error.WriteLine($"Unexpected error: {ex.Message}");
+            Console.Error.WriteLine("Generate a support bundle and send it with this message.");
             return ExitCodes.Unknown;
         }
     }
 
-    private static CliOptions ParseArguments(string[] args)
+    /// <summary>
+    /// Builds the composition root.
+    ///
+    /// Configuration precedence, lowest first: appsettings.json, appsettings.Production.json,
+    /// then environment variables prefixed <c>EPACS_</c>. The .epcfg is deliberately NOT a
+    /// configuration source — it is data the pipeline receives, so a site pack can never
+    /// silently redefine an installer path or a threshold.
+    /// </summary>
+    private static ServiceProvider BuildProvider(CliOptions options)
     {
-        var options = new CliOptions();
+        var baseDir = AppContext.BaseDirectory;
 
-        foreach (var arg in args)
+        var configuration = new ConfigurationBuilder()
+            .SetBasePath(baseDir)
+            .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
+            .AddJsonFile("appsettings.Production.json", optional: true, reloadOnChange: false)
+            .AddEnvironmentVariables("EPACS_")
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddLogging(builder => ConfigureLogging(builder, options));
+        services.AddInstaller(configuration);
+
+        // Validate the graph now rather than on first resolve: a missing registration should
+        // fail before the installer has touched the machine, not three phases in.
+        return services.BuildServiceProvider(new ServiceProviderOptions
         {
-            if (arg.Equals("/quiet", StringComparison.OrdinalIgnoreCase) ||
-                arg.Equals("--quiet", StringComparison.OrdinalIgnoreCase))
+            ValidateOnBuild = true,
+            ValidateScopes = true
+        });
+    }
+
+    /// <summary>
+    /// AC-2.4 requires that quiet mode writes no console output. Until a file sink is wired
+    /// (Serilog via Intellect.Erp.Observability, tasks.md 12.4), quiet mode is honoured by
+    /// emitting nothing rather than by pretending the file log exists — an operator who is told
+    /// "see the log file" and finds none is worse off than one told there is no log yet.
+    /// </summary>
+    private static void ConfigureLogging(ILoggingBuilder builder, CliOptions options)
+    {
+        builder.ClearProviders();
+
+        if (!options.Quiet)
+        {
+            builder.AddSimpleConsole(c =>
             {
-                options.Quiet = true;
-            }
-            else if (arg.StartsWith("/config:", StringComparison.OrdinalIgnoreCase))
-            {
-                options.ConfigPath = arg[8..];
-            }
-            else if (arg.StartsWith("--config=", StringComparison.OrdinalIgnoreCase))
-            {
-                options.ConfigPath = arg[9..];
-            }
-            else if (arg.StartsWith("/mode:", StringComparison.OrdinalIgnoreCase))
-            {
-                options.Mode = ParseMode(arg[6..]);
-            }
-            else if (arg.StartsWith("--mode=", StringComparison.OrdinalIgnoreCase))
-            {
-                options.Mode = ParseMode(arg[7..]);
-            }
-            else if (arg.Equals("/help", StringComparison.OrdinalIgnoreCase) ||
-                     arg.Equals("--help", StringComparison.OrdinalIgnoreCase) ||
-                     arg.Equals("-h", StringComparison.OrdinalIgnoreCase))
-            {
-                options.ShowHelp = true;
-            }
-            else if (arg.Equals("/demo", StringComparison.OrdinalIgnoreCase) ||
-                     arg.Equals("--demo", StringComparison.OrdinalIgnoreCase))
-            {
-                options.Demo = true;
-            }
-            else if (arg.StartsWith("/harness-service-map:", StringComparison.OrdinalIgnoreCase))
-            {
-                options.HarnessServiceMapPath = arg[21..];
-            }
-            else if (arg.StartsWith("--harness-service-map=", StringComparison.OrdinalIgnoreCase))
-            {
-                options.HarnessServiceMapPath = arg[22..];
-            }
+                c.SingleLine = true;
+                c.TimestampFormat = "HH:mm:ss ";
+            });
         }
 
-        return options;
+        builder.SetMinimumLevel(options.Verbose ? LogLevel.Debug : LogLevel.Information);
     }
 
-    private static InstallerMode ParseMode(string mode) => mode.ToLowerInvariant() switch
+    private static void Report(PipelineResult result, bool quiet)
     {
-        "install" => InstallerMode.Install,
-        "upgrade" => InstallerMode.Upgrade,
-        "repair" => InstallerMode.Repair,
-        "uninstall" => InstallerMode.Uninstall,
-        "backup" => InstallerMode.Backup,
-        "restore" => InstallerMode.Restore,
-        _ => InstallerMode.Install
-    };
+        if (quiet)
+        {
+            return;
+        }
 
-    private static void PrintUsage()
-    {
-        Console.WriteLine("""
-            ePACS Offline Installer CLI
-            
-            Usage:
-              Installer.CLI.exe [options]
-            
-            Options:
-              /quiet                       Run in silent mode (no console output)
-              /config:<path>               Path to site configuration pack (.epcfg)
-              /mode:<mode>                 Operation mode: install, upgrade, repair, uninstall, backup, restore
-              /demo                        Install NLDR-side harness services too (single-machine demo)
-              /harness-service-map:<path>  Path to harness service-map.yaml (default: bundled)
-              /help                        Show this help message
-            
-            Exit Codes:
-              0   Success
-              1   Precheck failure
-              2   Install/upgrade failure
-              3   Health check failure
-              99  Unknown error
-            
-            Examples:
-              Installer.CLI.exe /quiet /config:D:\site-config.epcfg /mode:install
-              Installer.CLI.exe /quiet /config:D:\site-config.epcfg /mode:install /demo
-              Installer.CLI.exe /mode:upgrade
-              Installer.CLI.exe /mode:backup
-            """);
+        var writer = result.Outcome == PipelineOutcome.Success ? Console.Out : Console.Error;
+
+        writer.WriteLine();
+        foreach (var step in result.Steps)
+        {
+            writer.WriteLine($"  - {step}");
+        }
+
+        writer.WriteLine();
+        writer.WriteLine(result.Outcome == PipelineOutcome.Success
+            ? $"OK  {result.Message}"
+            : $"FAILED ({result.Outcome})  {result.Message}");
     }
 }
 
-internal sealed class CliOptions
-{
-    public bool Quiet { get; set; }
-    public string? ConfigPath { get; set; }
-    public InstallerMode Mode { get; set; } = InstallerMode.Install;
-    public bool ShowHelp { get; set; }
-    public bool Demo { get; set; }
-    public string? HarnessServiceMapPath { get; set; }
-}
-
+/// <summary>
+/// Exit codes. Stable: scripts and the enterprise rollout tooling branch on these, so treat a
+/// code as an interface — add, never renumber.
+/// </summary>
 internal static class ExitCodes
 {
     public const int Success = 0;
     public const int PrecheckFailure = 1;
     public const int InstallFailure = 2;
     public const int HealthFailure = 3;
+    public const int NotImplemented = 4;
+    public const int Refused = 5;
+    public const int Usage = 64;   // sysexits.h EX_USAGE — distinguishable from an operation failure
+    public const int Cancelled = 130; // 128 + SIGINT, the shell convention
     public const int Unknown = 99;
+
+    public static int From(PipelineOutcome outcome) => outcome switch
+    {
+        PipelineOutcome.Success => Success,
+        PipelineOutcome.PrecheckFailed => PrecheckFailure,
+        PipelineOutcome.OperationFailed => InstallFailure,
+        PipelineOutcome.HealthFailed => HealthFailure,
+        PipelineOutcome.NotImplemented => NotImplemented,
+        PipelineOutcome.Refused => Refused,
+        _ => Unknown
+    };
 }

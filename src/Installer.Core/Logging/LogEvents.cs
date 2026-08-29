@@ -45,4 +45,46 @@ internal static partial class LogEvents
 
     [LoggerMessage(EventId = 1011, Level = LogLevel.Information, Message = "Requested mode {Mode} validated against installation state.")]
     public static partial void RequestedModeValidated(ILogger logger, InstallerMode mode);
+
+    // ── Pipeline and site config: 1020-1049 ─────────────────────────────────
+    [LoggerMessage(EventId = 1020, Level = LogLevel.Warning,
+        Message = "Resuming an incomplete run from phase {Phase} (correlation {CorrelationId}).")]
+    public static partial void PipelineResuming(ILogger logger, InstallerPhase phase, string correlationId);
+
+    [LoggerMessage(EventId = 1021, Level = LogLevel.Information,
+        Message = "Pipeline succeeded. Mode: {Mode}, version: {Version}.")]
+    public static partial void PipelineSucceeded(ILogger logger, InstallerMode mode, string version);
+
+    [LoggerMessage(EventId = 1022, Level = LogLevel.Error,
+        Message = "Pipeline failed in mode {Mode}.")]
+    public static partial void PipelineFailed(ILogger logger, Exception exception, InstallerMode mode);
+
+    [LoggerMessage(EventId = 1023, Level = LogLevel.Error,
+        Message = "Could not write the failure checkpoint for {ErrorCode}. The original failure is the one to act on.")]
+    public static partial void CheckpointWriteFailed(ILogger logger, Exception exception, string errorCode);
+
+    [LoggerMessage(EventId = 1030, Level = LogLevel.Information,
+        Message = "Site config loaded: PACS {PacsId}, state {StateCode}, from {Path}.")]
+    public static partial void SiteConfigLoaded(ILogger logger, string pacsId, string stateCode, string path);
+
+    [LoggerMessage(EventId = 1031, Level = LogLevel.Information,
+        Message = "Site config {Path} carries a signature. NOTE: presence only - cryptographic verification is not implemented (tasks.md 7.9).")]
+    public static partial void SiteConfigSignaturePresent(ILogger logger, string path);
+
+    [LoggerMessage(EventId = 1032, Level = LogLevel.Warning,
+        Message = "Site config {Path} is UNSIGNED and was accepted because --allow-unsigned-config was passed. Never use this on an installation.")]
+    public static partial void SiteConfigUnsignedAccepted(ILogger logger, string path);
+
+    // ── Concurrency guard: 1040-1049 ────────────────────────────────────────
+    [LoggerMessage(EventId = 1040, Level = LogLevel.Information,
+        Message = "Installer lock acquired: {Path}.")]
+    public static partial void InstallerLockAcquired(ILogger logger, string path);
+
+    [LoggerMessage(EventId = 1041, Level = LogLevel.Warning,
+        Message = "Installer lock at {Path} is held by another process ({Holder}). Refusing to run a second installer.")]
+    public static partial void InstallerLockUnavailable(ILogger logger, string path, string holder);
+
+    [LoggerMessage(EventId = 1042, Level = LogLevel.Information,
+        Message = "Installer lock released: {Path}.")]
+    public static partial void InstallerLockReleased(ILogger logger, string path);
 }

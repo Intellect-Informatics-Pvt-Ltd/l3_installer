@@ -8,6 +8,23 @@
     <ProjectReference Include="..\SupportBundle\SupportBundle.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The CLI owns process concerns: configuration sources, the container, console logging.
+         Everything else it needs comes through Installer.Core's AddInstaller(). -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- CliOptions is internal: it is a process-boundary detail, not API. The tests reach it
+         this way rather than by making it public, so nothing outside the CLI can depend on it. -->
+    <InternalsVisibleTo Include="Installer.UnitTests" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>Exe</OutputType>
   </PropertyGroup>

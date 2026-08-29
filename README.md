@@ -8,10 +8,16 @@
 
 > ### Status — read this first
 >
-> The framework is **under construction and has not yet run end-to-end.** `Installer.CLI` has no
-> composition root, so the components below exist as libraries that nothing yet assembles.
-> It builds clean on **.NET 10** (SDK 10.0.302, pinned in `global.json` to match the L2-R2
-> workspace) and CI builds and tests it on Linux and Windows.
+> **The framework runs end to end** as of 2026-08-29 — verification, prechecks, topology load,
+> install and uninstall execute through a composed pipeline that checkpoints every phase. It
+> builds clean on **.NET 10** (SDK 10.0.302, pinned in `global.json` to match the L2-R2
+> workspace); CI builds and tests it on Linux and Windows.
+>
+> **Dry run is the default.** Nothing changes until you pass `--apply`.
+>
+> What is still missing is substantial: there is no payload bundling, no database bootstrap, and
+> no upgrade, restore or repair engine. Those modes now exit **4** with a message naming the
+> missing engine, rather than returning 0 as they used to.
 > **[`.kiro/specs/epacs-offline-installer/tasks.md`](.kiro/specs/epacs-offline-installer/tasks.md)
 > carries a per-item audit** — what is built, what is partial, and what is not started — and is
 > the only place to trust for status. In particular: there is no WiX bootstrapper, no payload
@@ -27,7 +33,7 @@
 
 | Component | Solution | Purpose | Status |
 |-----------|----------|---------|--------|
-| **Offline Installer** | `ePACS.Installer.sln` | The framework: verification, prechecks, install, service orchestration, monitoring. Upgrade / repair / restore are designed but unimplemented. | ~8,240 LOC · 37 unit tests · no integration coverage |
+| **Offline Installer** | `ePACS.Installer.sln` | The framework: verification, prechecks, topology, install, uninstall, service orchestration, monitoring. Upgrade / repair / restore are designed but unimplemented. | ~10,200 LOC · 99 unit tests · no integration coverage |
 | **Sync Test Harness** | `harness/ePACS.SyncHarness.sln` | Stand-in payload and protocol rig for PACS ↔ NLDR sync. **A simulation, not the product.** | ~3,836 LOC · 15 tests · 5 projects are empty shells |
 
 Both target **.NET 10** on **Windows 10/11 x64** (offline, rural India) — matched to the
@@ -130,10 +136,10 @@ This creates a voucher → writes to `sync_outbox` atomically → `Pacs.SyncWork
 | Project | Purpose |
 |---------|---------|
 | `SharedKernel` | Configuration models, contracts, error handling abstractions |
-| `Installer.Core` | State machine with checkpoint persistence (power-cut resilient) |
+| `Installer.Core` | State machine with checkpoint persistence (power-cut resilient), the **composition root** (`AddInstaller()`), the **pipeline** that drives a run, the `.epcfg` loader, and the cross-platform concurrency lock |
 | `Installer.Actions` | Prechecks, payload extraction, service orchestration, harness integration |
 | `Installer.Agent` | Always-on worker (health polling, disk monitoring, drift detection) |
-| `Installer.CLI` | Silent/unattended CLI (`/quiet /config /mode /demo`) |
+| `Installer.CLI` | The entry point. Builds the composition root, runs the pipeline, maps outcomes to exit codes. Dry run by default. |
 | `ManifestVerifier` | Authenticode signature + SHA-256 payload verification |
 | `SupportBundle` | Diagnostics collector with PII redaction |
 | `BackupRestore` | Backup skeleton. **The MySQL dump itself is a placeholder** (`BackupEngine.cs:253`); restore is unimplemented. |
@@ -153,6 +159,40 @@ This creates a voucher → writes to `sync_outbox` atomically → `Pacs.SyncWork
 | `Nldr.SyncWorker` | 5203 | ACK publisher, command publisher, heartbeat consumer |
 | `Nldr.DashboardUi` | 5401 | *(empty shell — 7 lines)* |
 | `Harness.ScenarioPlayer` | — | *(empty shell — no source files)* |
+
+---
+
+## Running It
+
+```bash
+# What would happen — changes nothing. This is the default.
+Installer.CLI --config=D:\site.epcfg --media=E:\media
+
+# Do it
+Installer.CLI --config=D:\site.epcfg --media=E:\media --apply
+
+# Unattended rollout (no console output)
+Installer.CLI --quiet --config=D:\site.epcfg --apply
+
+# Remove, keeping business data
+Installer.CLI --mode=uninstall --apply
+```
+
+Windows-style `/flag:value` works everywhere `--flag=value` does. Run `--help` for the full list.
+
+**Exit codes** — these are an interface; the rollout tooling branches on them:
+
+| | |
+|---|---|
+| 0 | Success |
+| 1 | Precheck failure — a prerequisite was not met; **nothing was changed** |
+| 2 | Operation failure |
+| 3 | Health check failure after install |
+| 4 | **Mode not implemented in this build — nothing was done.** Do not treat the node as upgraded, restored or backed up |
+| 5 | Refused — another installer is running, or a required input was missing |
+| 64 | Usage error |
+| 99 | Unexpected error |
+| 130 | Cancelled (Ctrl+C); the run is checkpointed and resumable |
 
 ---
 
@@ -183,7 +223,7 @@ cd harness
 
 | Test Suite | Docker | Tests | Command |
 |-----------|--------|-------|---------|
-| Installer unit tests | No | **37** | `dotnet test ePACS.Installer.sln` |
+| Installer unit tests | No | **99** | `dotnet test ePACS.Installer.sln` |
 | Installer integration tests | No | **1 placeholder** | (in the same solution) |
 | Harness contract tests | No | **15** | `dotnet test harness/tests/Harness.ContractTests/` |
 | Harness integration tests | Yes | 0 `[Fact]`s; infrastructure only | `dotnet test harness/tests/Harness.IntegrationTests/` |
