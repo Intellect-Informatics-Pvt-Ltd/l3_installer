@@ -3,6 +3,7 @@ using Installer.Agent.FileSync;
 using Installer.Agent.Heartbeat;
 using Installer.Agent.Monitors;
 using SharedKernel.Configuration;
+using SharedKernel.Hosting;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -17,6 +18,10 @@ builder.Services.Configure<HeartbeatOptions>(builder.Configuration.GetSection(He
 // Register HTTP client factory (for heartbeat and HTTPS file sync)
 builder.Services.AddHttpClient("Heartbeat");
 builder.Services.AddHttpClient("FileSync");
+
+// /health/live and /health/ready on the port the service map probes (Services:Agent:HealthPort).
+// Registered before the worker so liveness answers as soon as the process is up (G31).
+builder.Services.AddHealthEndpoint(builder.Configuration.GetValue("Services:Agent:HealthPort", 5090));
 
 // Register monitors
 builder.Services.AddSingleton<IMonitor, DiskSpaceMonitor>();

@@ -217,4 +217,12 @@ internal static partial class LogEvents
 
     [LoggerMessage(EventId = 2164, Level = LogLevel.Information, Message = "Service account {Account} created (system account, no login shell, no home).")]
     public static partial void ServiceAccountCreated(ILogger logger, string account);
+
+    // Health aggregation: 2170-2179
+    [LoggerMessage(EventId = 2170, Level = LogLevel.Information, Message = "Health: {Service} is {State} - {Detail}")]
+    public static partial void HealthVerdict(ILogger logger, string service, Installer.Actions.Health.HealthState state, string detail);
+
+    [LoggerMessage(EventId = 2171, Level = LogLevel.Information,
+        Message = "Health summary: {Healthy} healthy, {Listening} listening (no health route - G31), {Failed} failed of {Total}.")]
+    public static partial void HealthSummary(ILogger logger, int healthy, int listening, int failed, int total);
 }

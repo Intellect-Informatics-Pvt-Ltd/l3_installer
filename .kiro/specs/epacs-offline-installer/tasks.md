@@ -372,7 +372,7 @@ and the claim has to be updated with it — which is the point.
 - [~] 13. Implement health endpoints and smoke test
   - [~] 13.1 Health endpoint contract — **defined in the service map as `/health/live` + `/health/ready`. No payload in this repository or in L2-R2 serves those paths.**
   - [~] 13.2 Smoke test runner — **`HarnessSmokeTest` polls health endpoints. It does not create/verify/delete a test record as AC-1.8 requires.**
-  - [ ] 13.3 Health check aggregator — the pipeline reaches the Health phase and states plainly, in its own operator-facing output, that health verification is not implemented and that a service starting without error is not the same as a service being healthy. A test asserts that sentence is present, so the claim changes on the day the aggregator lands.
+  - [x] 13.3 Health check aggregator — **Done 2026-09-13:** `Installer.Actions/Health/HealthAggregator` - three verdicts (healthy / listening / failed), retried across a window, in parallel; the install fails by name on a failed service and never calls a tcp-only service healthy. Both agents now answer `/health/live` and `/health/ready` (`SharedKernel/Hosting/HealthEndpoint`, no ASP.NET dependency). 7 tests against real sockets. *Was:* the pipeline reaches the Health phase and states plainly, in its own operator-facing output, that health verification is not implemented and that a service starting without error is not the same as a service being healthy. A test asserts that sentence is present, so the claim changes on the day the aggregator lands.
   - [ ] 13.4 Unit tests for health aggregation
 
 - [~] 14. Create AGENTS.md and documentation

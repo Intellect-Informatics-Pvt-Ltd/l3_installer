@@ -38,6 +38,14 @@ public sealed class InstallerOptions
     public string ServiceMapPath { get; set; } = "config/service-map.yaml";
 
     /// <summary>
+    /// The least every service gets to come up after start before health is judged, in seconds.
+    /// A .NET service that has been started is JIT-compiling and opening a pool; 27 of them on
+    /// one machine take longer than one. The service map's own timeout_seconds raises this per
+    /// service; it never lowers it.
+    /// </summary>
+    public int HealthWindowSeconds { get; set; } = 120;
+
+    /// <summary>
     /// Path to the release manifest YAML file.
     /// </summary>
     public string ManifestPath { get; set; } = "release-manifest.yaml";

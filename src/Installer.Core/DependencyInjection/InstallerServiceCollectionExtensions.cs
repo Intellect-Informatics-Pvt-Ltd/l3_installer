@@ -1,4 +1,5 @@
 using Installer.Actions.Database;
+using Installer.Actions.Health;
 using Installer.Actions.Install;
 using Installer.Actions.Platform;
 using Installer.Actions.Platform.Linux;
@@ -140,6 +141,9 @@ public static class InstallerServiceCollectionExtensions
         // Writes the node's facts into each deployed service's own appsettings.json - the only
         // place every code path in the estate reads (ADR-0002 adoption is partial; G26).
         services.AddSingleton<IPayloadConfigRewriter, PayloadConfigRewriter>();
+        // Post-start health in three verdicts - healthy / listening / failed - so "accepted a
+        // connection" is never upgraded to "healthy" (13.3, G31).
+        services.AddSingleton<IHealthAggregator, HealthAggregator>();
         // PLATFORM SELECTION — ADR-0010.
         //
         // The only place in the product that branches on the operating system. Everything above

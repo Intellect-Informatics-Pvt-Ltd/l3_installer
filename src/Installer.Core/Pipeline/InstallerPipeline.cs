@@ -1,4 +1,5 @@
 using Installer.Actions.Database;
+using Installer.Actions.Health;
 using Installer.Actions.Install;
 using Installer.Actions.Platform;
 using Installer.Actions.Prechecks;
@@ -53,6 +54,7 @@ public sealed class InstallerPipeline : IInstallerPipeline
     private readonly IServiceAccountProvisioner _accounts;
     private readonly IAclEngine _acl;
     private readonly IFirewallManager _firewall;
+    private readonly IHealthAggregator _health;
     private readonly IOptions<InstallerOptions> _options;
     private readonly IOptions<ComponentsOptions> _components;
     private readonly ILogger<InstallerPipeline> _logger;
@@ -87,6 +89,7 @@ public sealed class InstallerPipeline : IInstallerPipeline
         IServiceAccountProvisioner accounts,
         IAclEngine acl,
         IFirewallManager firewall,
+        IHealthAggregator health,
         IOptions<InstallerOptions> options,
         IOptions<ComponentsOptions> components,
         ILogger<InstallerPipeline> logger)
@@ -112,6 +115,7 @@ public sealed class InstallerPipeline : IInstallerPipeline
         _accounts = accounts;
         _acl = acl;
         _firewall = firewall;
+        _health = health;
         _options = options;
         _components = components;
         _logger = logger;
@@ -406,9 +410,20 @@ public sealed class InstallerPipeline : IInstallerPipeline
         steps.Add($"Registered and started {services.Count} service(s) in dependency order.");
 
         // ── Health ───────────────────────────────────────────────────────────
-        // Deliberately NOT claimed as done. See the note on VerifyHealth below.
+        // Three verdicts, counted separately. "Listening" is what a service with no health
+        // route can prove (20 of 27 today, G31) and it is never upgraded to "healthy"; a failed
+        // service fails the install by name.
         await _stateMachine.TransitionAsync(InstallerPhase.Health, cancellationToken: ct);
-        steps.Add("Health verification is not implemented (tasks.md §13.3); service start returned without error, which is not the same thing.");
+        var health = await _health.VerifyAsync(services, TimeSpan.FromSeconds(opts.HealthWindowSeconds), ct);
+        steps.Add($"Health: {health.Summary}");
+        if (!health.Passed)
+        {
+            await SafeFailAsync("ERP-INST-HEALTH", health.Summary, ct);
+            return PipelineResult.Failed(PipelineOutcome.HealthFailed, mode, InstallerPhase.Health,
+                $"{health.Failed} service(s) did not come up: " +
+                string.Join("; ", health.Failures.Select(f => $"{f.Service} ({f.Detail})")) +
+                ". The services are registered and the boundary is laid; fix the named service and run --mode repair, or read its journal.", steps);
+        }
 
         await _stateMachine.CompleteAsync(ct);
         LogEvents.PipelineSucceeded(_logger, mode, manifest.Manifest.StackVersion);

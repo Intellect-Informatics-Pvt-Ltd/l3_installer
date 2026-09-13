@@ -1,4 +1,5 @@
 using SharedKernel.Configuration;
+using SharedKernel.Hosting;
 using Sync.Agent;
 using Sync.Agent.Connectivity;
 using Sync.Agent.Inbox;
@@ -9,6 +10,9 @@ var builder = Host.CreateApplicationBuilder(args);
 // Bind configuration
 builder.Services.Configure<InstallerOptions>(builder.Configuration.GetSection(InstallerOptions.SectionName));
 builder.Services.Configure<ServicesOptions>(builder.Configuration.GetSection(ServicesOptions.SectionName));
+
+// /health/live and /health/ready on the port the service map probes (Services:Sync:HealthPort) - G31.
+builder.Services.AddHealthEndpoint(builder.Configuration.GetValue("Services:Sync:HealthPort", 5080));
 
 // Register HTTP client for NLDR communication
 builder.Services.AddHttpClient("NLDR");

@@ -1,3 +1,4 @@
+using Installer.Actions.Health;
 using Installer.Actions.Platform;
 using SharedKernel.Security;
 using FluentAssertions;
@@ -46,6 +47,7 @@ public sealed class InstallerPipelineTests : IDisposable
     private readonly Mock<IServiceAccountProvisioner> _accounts = new();
     private readonly Mock<IAclEngine> _acl = new();
     private readonly Mock<IFirewallManager> _firewall = new();
+    private readonly Mock<IHealthAggregator> _health = new();
     private ComponentsOptions _componentsOptions = new();
     private readonly List<IPrecheck> _prechecks = [];
 
@@ -59,6 +61,8 @@ public sealed class InstallerPipelineTests : IDisposable
         _acl.Setup(a => a.GenerateRules(It.IsAny<IReadOnlyList<ServiceMapEntry>>())).Returns([]);
         _acl.Setup(a => a.VerifyAsync(It.IsAny<IReadOnlyList<AclRule>>(), It.IsAny<CancellationToken>())).ReturnsAsync(new AclVerificationResult { Valid = true });
         _firewall.Setup(f => f.GenerateRules()).Returns([]);
+        _health.Setup(h => h.VerifyAsync(It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+               .ReturnsAsync(new HealthReport { Verdicts = [] });
         _payloadConfig.Setup(p => p.RewriteAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<CancellationToken>()))
                       .ReturnsAsync(new PayloadConfigResult { Rewritten = new Dictionary<string, int>(), Skipped = [] });
     }
@@ -85,7 +89,7 @@ public sealed class InstallerPipelineTests : IDisposable
             _repair.Object,
             _siteTokens,
             _payloadConfig.Object,
-            _accounts.Object, _acl.Object, _firewall.Object,
+            _accounts.Object, _acl.Object, _firewall.Object, _health.Object,
             opts,
             Microsoft.Extensions.Options.Options.Create(_componentsOptions),
             NullLogger<InstallerPipeline>.Instance);
@@ -316,19 +320,55 @@ public sealed class InstallerPipelineTests : IDisposable
     }
 
     [Fact]
-    public async Task Does_not_claim_the_install_is_healthy()
+    public async Task Health_is_judged_in_three_verdicts_and_listening_is_never_called_healthy()
     {
-        // Health verification is unimplemented (tasks.md 13.3). Reporting success is honest
-        // only because the message says what was NOT checked.
+        // 13.3. A tcp-only service (20 of 27 today, G31) can prove it is listening and nothing
+        // more; the install passes on that, and the step says so in those words.
         GivenVerificationSucceeds();
         GivenConfigGenerates();
         GivenDatabaseCanBootstrap();
         GivenDatabaseExecutes();
-        GivenTopology();
+        GivenTopology(2);
+        _health.Setup(h => h.VerifyAsync(It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+               .ReturnsAsync(new HealthReport
+               {
+                   Verdicts =
+                   [
+                       new ServiceHealthVerdict("l3_PACDetailsAPI", HealthState.Healthy, "/health answered 200"),
+                       new ServiceHealthVerdict("l3_FAS", HealthState.Listening, "5010 accepts connections")
+                   ]
+               });
 
         var result = await Build().RunAsync(new PipelineRequest { Mode = InstallerMode.Install, SiteConfig = Site, DryRun = false });
 
-        result.Steps.Should().Contain(s => s.Contains("Health verification is not implemented", StringComparison.Ordinal));
+        result.Outcome.Should().Be(PipelineOutcome.Success);
+        result.Steps.Should().Contain(s => s.Contains("1 healthy, 1 listening (no health route - G31), 0 failed of 2"));
+        result.Steps.Should().NotContain(s => s.Contains("not implemented"));
+    }
+
+    [Fact]
+    public async Task A_service_that_does_not_come_up_fails_the_install_by_name()
+    {
+        GivenVerificationSucceeds();
+        GivenConfigGenerates();
+        GivenDatabaseCanBootstrap();
+        GivenDatabaseExecutes();
+        GivenTopology(2);
+        _health.Setup(h => h.VerifyAsync(It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+               .ReturnsAsync(new HealthReport
+               {
+                   Verdicts =
+                   [
+                       new ServiceHealthVerdict("l3_PACDetailsAPI", HealthState.Healthy, "/health answered 200"),
+                       new ServiceHealthVerdict("l3_Loans", HealthState.Failed, "5012 connection refused")
+                   ]
+               });
+
+        var result = await Build().RunAsync(new PipelineRequest { Mode = InstallerMode.Install, SiteConfig = Site, DryRun = false });
+
+        result.Outcome.Should().Be(PipelineOutcome.HealthFailed);
+        result.ReachedPhase.Should().Be(InstallerPhase.Health);
+        result.Message.Should().Contain("l3_Loans").And.Contain("connection refused").And.Contain("--mode repair");
     }
 
     // ── Uninstall ────────────────────────────────────────────────────────────
