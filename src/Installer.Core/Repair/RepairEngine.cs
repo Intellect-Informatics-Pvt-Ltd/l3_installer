@@ -1,6 +1,7 @@
 using Installer.Actions.Install;
 using Installer.Actions.Platform;
 using Installer.Actions.Topology;
+using Installer.Core.Pipeline;
 using Installer.Core.SiteConfig;
 using ManifestVerifier;
 using Microsoft.Extensions.Logging;
@@ -138,7 +139,8 @@ public sealed class RepairEngine : IRepairEngine
                 $"The release directory {releasePath} is missing."));
         }
 
-        var serviceMapPath = Path.Combine(mediaDir, opts.ServiceMapPath);
+        var media = await VerifiedMedia.OpenAsync(manifest, mediaDir, Path.Combine(opts.ResolvedTempRoot, "verified-media-repair"), cancellationToken);
+        var serviceMapPath = media.Resolve(VerifiedMedia.ConfigPayload, Path.GetFileName(opts.ServiceMapPath), "the service map");
         var services = await _serviceMapLoader.LoadAsync(
             serviceMapPath, _components.Value.EnabledGroups(), cancellationToken);
 
@@ -236,7 +238,7 @@ public sealed class RepairEngine : IRepairEngine
 
             var generated = await _configGenerator.GenerateAllAsync(
                 request.SiteConfig,
-                Path.Combine(mediaDir, "config-templates"),
+                media.PayloadDirectory(VerifiedMedia.TemplatesPayload, "the configuration templates"),
                 configDir,
                 services,
                 cancellationToken);
@@ -251,7 +253,7 @@ public sealed class RepairEngine : IRepairEngine
             var rewrite = await _payloadConfig.RewriteAsync(
                 Path.Combine(releasePath, "services"),
                 Path.Combine(configDir, "appsettings.Site.json"),
-                Path.Combine(mediaDir, "config", PayloadConfigRewriter.SiblingUrlsFileName),
+                media.TryResolve(VerifiedMedia.ConfigPayload, PayloadConfigRewriter.SiblingUrlsFileName),
                 services,
                 cancellationToken);
             repaired.Add($"Rewrote {rewrite.Rewritten.Count} service configuration(s) for this node.");

@@ -1,5 +1,8 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using SharedKernel.Configuration;
+using SharedKernel.Security;
 using SharedKernel.Contracts;
 
 namespace Installer.Core.SiteConfig;
@@ -27,7 +30,18 @@ public sealed class SiteConfigLoader : ISiteConfigLoader
 
     private readonly ILogger<SiteConfigLoader> _logger;
 
-    public SiteConfigLoader(ILogger<SiteConfigLoader> logger) => _logger = logger;
+    private readonly ICodeSigner _verifier;
+    private readonly IOptions<InstallerOptions> _options;
+
+    /// <summary>The detached signature beside a pack: <c>site.epcfg.sig</c>, DER CMS over the pack's bytes.</summary>
+    public const string SignatureSuffix = ".sig";
+
+    public SiteConfigLoader(ICodeSigner verifier, IOptions<InstallerOptions> options, ILogger<SiteConfigLoader> logger)
+    {
+        _verifier = verifier;
+        _options = options;
+        _logger = logger;
+    }
 
     public async Task<SiteConfigPack> LoadAsync(
         string path,
@@ -59,7 +73,7 @@ public sealed class SiteConfigLoader : ISiteConfigLoader
         }
 
         Validate(pack, path);
-        CheckSignature(pack, path, allowUnsigned);
+        await CheckSignatureAsync(pack, path, allowUnsigned, cancellationToken);
 
         LogEvents.SiteConfigLoaded(_logger, pack.PacsId, pack.StateCode, path);
         return pack;
@@ -100,19 +114,39 @@ public sealed class SiteConfigLoader : ISiteConfigLoader
         }
     }
 
-    private void CheckSignature(SiteConfigPack pack, string path, bool allowUnsigned)
+    /// <summary>
+    /// 7.9, done properly (2026-09-13): the pack is signed by a DETACHED CMS signature beside it
+    /// (<c>site.epcfg.sig</c>) over the pack's exact bytes, verified against the pinned release
+    /// key exactly as a medium's manifest is. The embedded <c>signature</c> field is legacy: it
+    /// was never verified, and a pack that carries one without the sidecar is refused rather than
+    /// trusted on the word of a field nobody checked.
+    /// </summary>
+    private async Task CheckSignatureAsync(SiteConfigPack pack, string path, bool allowUnsigned, CancellationToken ct)
     {
-        var signed = !string.IsNullOrWhiteSpace(pack.Signature)
-                     && !string.Equals(pack.Signature, SignaturePlaceholder, StringComparison.Ordinal);
-
-        if (signed)
+        var sidecar = path + SignatureSuffix;
+        if (File.Exists(sidecar))
         {
-            // PRESENCE ONLY — this does not verify the signature. Cryptographic verification of
-            // the pack is task 7.9 and needs a canonical serialisation of the document minus the
-            // signature field, plus a byte-oriented overload on ISignatureVerifier (today it
-            // takes file paths). Until that exists, say so rather than implying a check happened.
-            LogEvents.SiteConfigSignaturePresent(_logger, path);
+            var result = await _verifier.VerifyFileAsync(path, sidecar, _options.Value.ExpectedSigningThumbprint, ct);
+            if (!result.Valid)
+            {
+                throw new SiteConfigException(
+                    $"Site configuration pack {path} has a signature that does not verify ({result.ErrorMessage}). " +
+                    "It decides this node's identity, data root, ports and backup targets; nothing was read from it.");
+            }
+
+            LogEvents.SiteConfigSignatureVerified(_logger, path, result.SignerThumbprint ?? "?");
             return;
+        }
+
+        var embedded = !string.IsNullOrWhiteSpace(pack.Signature)
+                       && !string.Equals(pack.Signature, SignaturePlaceholder, StringComparison.Ordinal);
+        if (embedded && !allowUnsigned)
+        {
+            throw new SiteConfigException(
+                $"Site configuration pack {path} carries an embedded 'signature' field but no {Path.GetFileName(sidecar)} beside it. " +
+                "Embedded signatures were never verified by any build; sign the pack with a detached CMS signature " +
+                "(openssl cms -sign -binary -in site.epcfg -signer state.crt -inkey state.key -outform DER -out site.epcfg.sig) " +
+                "or pass --allow-unsigned-config for development against a pack you produced yourself.");
         }
 
         if (!allowUnsigned)

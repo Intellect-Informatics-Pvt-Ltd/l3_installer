@@ -59,7 +59,7 @@ public sealed class InstallerPipelineTests : IDisposable
 
     private string? _siteConfigPath;
 
-    private InstallerOptions Options => new() { DataRoot = _dataRoot, BinaryRoot = Path.Combine(_dataRoot, "bin"), SiteConfigPath = _siteConfigPath };
+    private InstallerOptions Options => new() { DataRoot = _dataRoot, BinaryRoot = Path.Combine(_dataRoot, "bin"), SiteConfigPath = _siteConfigPath, ManifestPath = Path.Combine(MediaDir, "release-manifest.yaml") };
 
     public InstallerPipelineTests()
     {
@@ -106,17 +106,11 @@ public sealed class InstallerPipelineTests : IDisposable
         Signature = "sig", PacsId = "AP-XYZ-0001", StateCode = "AP", DataRoot = @"D:\ePACSData"
     };
 
-    private static ReleaseManifest Manifest => new()
-    {
-        Manifest = new ManifestMetadata
-        {
-            ManifestId = "rel-test", StackVersion = "3.2.1", SchemaVersion = 25, MinOsBuild = 17763,
-            InstallerToolVersion = "4.0.0", SigningCertThumbprint = "AA", CreatedAt = DateTimeOffset.UnixEpoch,
-            CreatedBy = "test"
-        },
-        Payloads = [new PayloadEntry { Name = "p", File = "p.zip", Sha256 = "x", SizeBytes = 1, InstallOrder = 1, Required = true }],
-        Compatibility = new CompatibilityInfo { MinUpgradeFrom = "3.1.0", MaxUpgradeFrom = "3.2.0", RequiresSideBySide = false }
-    };
+    private string MediaDir => Path.Combine(_dataRoot, "media");
+
+    /// <summary>A real medium on disk: the control payloads are re-hashed at use (G35), so mocking the verifier is not enough.</summary>
+    private ReleaseManifest Manifest => _manifest ??= MediumFixture.Write(MediaDir);
+    private ReleaseManifest? _manifest;
 
     private void GivenVerificationSucceeds() =>
         _verifier.Setup(v => v.VerifyAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -554,5 +548,20 @@ public sealed class InstallerPipelineTests : IDisposable
 
         var without = await Build().RunAsync(new PipelineRequest { Mode = InstallerMode.Install, SiteConfig = Site, DryRun = false });
         without.Steps.Should().Contain(s => s.Contains("NO society"));
+    }
+
+    [Fact]
+    public async Task A_control_payload_altered_on_the_stick_stops_the_install_before_anything_is_touched()
+    {
+        // G35: the schema every service binds to must come from a payload the manifest hashed.
+        GivenVerificationSucceeds();
+        File.AppendAllText(Path.Combine(MediaDir, "stable_baseline_ddl.sql"), "DROP TABLE t;\n");
+
+        var result = await Build().RunAsync(new PipelineRequest { Mode = InstallerMode.Install, SiteConfig = Site, DryRun = false });
+
+        result.Outcome.Should().Be(PipelineOutcome.OperationFailed);
+        result.ReachedPhase.Should().Be(InstallerPhase.Verify);
+        result.Message.Should().Contain("'db'").And.Contain("altered or truncated");
+        _dataRootInit.Verify(d => d.InitializeAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 }

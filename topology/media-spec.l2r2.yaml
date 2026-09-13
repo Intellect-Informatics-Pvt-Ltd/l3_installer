@@ -1,0 +1,98 @@
+# The L2-R2 release medium - what a PACS node is installed from. Companion to the generated
+# topology in this directory; staged by build/stage-l2r2-medium.py in the L2-R2 workspace, which
+# publishes the 27 services framework-dependent (ADR-0009), assembles the control payloads from
+# db/ and topology/, redacts secrets (build/config-hygiene.py) and then runs:
+#
+#   epacs-media build --spec l3_installer/topology/media-spec.l2r2.yaml \
+#                     --out artifacts/medium/l2r2-<version> --groups core,cache --pfx <release.pfx>
+#
+# The builder REFUSES a payload carrying a credential (SecretGate, exit 3) and exits 2 unsigned.
+#
+# CONTROL PAYLOADS (G35). The installer reads the service map, the sibling-URL table, the table
+# classification, the configuration templates and the baseline schema ONLY from the payloads
+# named `config`, `config-templates` and `db` below - re-hashed against the manifest at the moment
+# of use. A loose file beside the manifest is never read. Renaming these three is a refusal on
+# the node that names the missing payload.
+#
+# Sources are relative to THIS FILE. `${STAGE}` is the workspace's artifacts/l2r2-stage.
+release:
+  stack_version: "${STACK_VERSION}"          # filled by stage-l2r2-medium.py from the workspace's release tag
+  schema_version: ${SCHEMA_VERSION}          # the baseline's schema_version_registry value
+  min_os_build: 0                            # Debian first (ADR-0010); a Windows build sets 17763
+  installer_tool_version: "4.0.0"
+  created_by: "stage-l2r2-medium"
+  signing_cert_thumbprint: "${SIGNING_THUMBPRINT}"
+  hotfix_base_version: null
+
+payloads:
+  # ---- control payloads: the node trusts these because the manifest hashed them ----------------
+  - name: "config"
+    source: "${STAGE}/config"                # service-map.yaml (the linux map), sibling-urls.json,
+    install_order: 1                         # appsettings.Applications.json, pacs-table-classification.json
+    required: true
+    group: "core"
+  - name: "config-templates"
+    source: "../packaging/config-templates"
+    install_order: 2
+    required: true
+    group: "core"
+  - name: "db"
+    source: "${STAGE}/db/stable_baseline_ddl.sql"   # the ONE schema authority, copied from the workspace
+    install_order: 3
+    required: true
+    group: "core"
+
+  # ---- runtime and infrastructure ------------------------------------------------------------
+  - name: "dotnet"
+    source: "${STAGE}/dotnet"                # the one bundled ASP.NET Core runtime (ADR-0009)
+    install_order: 10
+    required: true
+    group: "core"
+  - name: "mysql"
+    source: "${STAGE}/mysql"                 # MySQL 8.4 LTS, Linux x64 generic tarball, unpacked
+    install_order: 11
+    required: true
+    group: "core"
+  - name: "garnet"
+    source: "${STAGE}/garnet"                # Garnet 2.1.5 (ADR-0002); --lua is in the service map
+    install_order: 12
+    required: true
+    group: "cache"
+  - name: "kafka"
+    source: "${STAGE}/kafka"                 # optional, ~290 MB with the JRE (ADR-0003)
+    install_order: 13
+    required: false
+    group: "eventing"
+  - name: "jre"
+    source: "${STAGE}/jre"
+    install_order: 14
+    required: false
+    group: "eventing"
+
+  # ---- the product -----------------------------------------------------------------------------
+  - name: "services"
+    source: "${STAGE}/services"              # 27 directories, one per l3_* repo, framework-dependent publish
+    install_order: 20
+    required: true
+    group: "core"
+  - name: "sync"
+    source: "${STAGE}/sync"                  # Sync.Agent (packs, ADR-0011)
+    install_order: 21
+    required: true
+    group: "core"
+  - name: "agent"
+    source: "${STAGE}/agent"                 # Installer.Agent
+    install_order: 22
+    required: true
+    group: "core"
+  - name: "error-catalog"
+    source: "../packaging/error-catalog"
+    install_order: 30
+    required: true
+    group: "core"
+
+compatibility:
+  min_upgrade_from: "${MIN_UPGRADE_FROM}"
+  max_upgrade_from: "${MAX_UPGRADE_FROM}"
+  requires_side_by_side: false
+  breaking_schema_change: false

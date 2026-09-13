@@ -19,7 +19,10 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    # master is the release branch; baseline/** is where the retarget and the offline-node work
+    # lands first. A CI that ran only on master would have watched none of 2026-08-29 or
+    # 2026-09-13 happen.
+    branches: [master, 'baseline/**']
   pull_request:
   workflow_dispatch:
 
@@ -91,6 +94,12 @@ jobs:
           # Only set on Linux; on Windows the live tests skip and say so.
           EPACS_TEST_MYSQL: ${{ runner.os == 'Linux' && 'Server=127.0.0.1;Port=13399;Database=epacs;Uid=root;Pwd=fp' || '' }}
         run: dotnet test ePACS.Installer.sln -c Release --no-build --logger "trx;LogFileName=installer.trx" --results-directory artifacts/test-results
+
+      - name: tasks.md cannot claim evidence that does not exist (X4)
+        # Every [x] item that names a code path in backticks must resolve under src/ or tests/.
+        # The status record went stale twice in one day on 2026-08-29; this is the guard.
+        if: runner.os == 'Linux'
+        run: python3 build/check-tasks-evidence.py
 
       # Contract tests only. The integration, chaos and long-offline suites need Docker and are
       # not wired here yet - see tasks.md W9. Listing them as "run" when they do not run is the

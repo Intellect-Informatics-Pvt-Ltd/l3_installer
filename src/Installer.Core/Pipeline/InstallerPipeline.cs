@@ -5,6 +5,7 @@ using Installer.Actions.Platform;
 using Installer.Actions.Prechecks;
 using Installer.Actions.Topology;
 using Installer.Actions.Uninstall;
+using Installer.Core.SiteConfig;
 using Installer.Core.StateMachine;
 using Installer.Core.Upgrade;
 using Installer.Core.Packs;
@@ -174,6 +175,13 @@ public sealed class InstallerPipeline : IInstallerPipeline
         {
             throw;
         }
+        catch (VerifiedMediaException ex)
+        {
+            // The medium is missing or has altered a control payload: nothing was touched.
+            LogEvents.PipelineFailed(_logger, ex, mode);
+            await SafeFailAsync("ERP-INST-MEDIA", ex.Message, cancellationToken);
+            return PipelineResult.Failed(PipelineOutcome.OperationFailed, mode, InstallerPhase.Verify, ex.Message, steps);
+        }
         catch (PlatformNotSupportedException ex)
         {
             // An engine this build does not have for this platform. Exit 4, by name - never 0,
@@ -216,14 +224,25 @@ public sealed class InstallerPipeline : IInstallerPipeline
 
         var target = InstalledSitePackPath(opts);
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-        await using (var source = File.OpenRead(opts.SiteConfigPath))
-        await using (var dest = File.Create(target))
+        await CopyAsync(opts.SiteConfigPath, target, ct);
+
+        // The detached signature travels with it, so repair and the sync agent re-verify the
+        // kept copy as strictly as the one on the stick (7.9).
+        var sidecar = opts.SiteConfigPath + SiteConfigLoader.SignatureSuffix;
+        if (File.Exists(sidecar))
         {
-            await source.CopyToAsync(dest, ct);
-            await dest.FlushAsync(ct);
+            await CopyAsync(sidecar, target + SiteConfigLoader.SignatureSuffix, ct);
         }
 
         return target;
+    }
+
+    private static async Task CopyAsync(string from, string to, CancellationToken ct)
+    {
+        await using var source = File.OpenRead(from);
+        await using var dest = File.Create(to);
+        await source.CopyToAsync(dest, ct);
+        await dest.FlushAsync(ct);
     }
 
     /// <summary>Where the install keeps the site pack: <c>&lt;DataRoot&gt;/config/site.epcfg</c>.</summary>
@@ -285,6 +304,11 @@ public sealed class InstallerPipeline : IInstallerPipeline
         var manifest = verification.Manifest;
         steps.Add($"Verified manifest {manifest.Manifest.ManifestId} and {verification.PayloadResults.Count} payload(s).");
 
+        // The control files - map, templates, schema, the sibling-URL table, the classification -
+        // are read from VERIFIED payloads only, never loose from the stick (G35).
+        var media = await VerifiedMedia.OpenAsync(manifest, mediaDir, Path.Combine(opts.ResolvedTempRoot, "verified-media"), ct);
+        steps.Add($"Control payloads present and re-hashed: {string.Join(", ", media.Present.Order(StringComparer.Ordinal))}.");
+
         // The version is now trustworthy, so the run can start checkpointing.
         _stateMachine = _stateMachineFactory.Create(
             mode, manifest.Manifest.StackVersion, _modeDetector.GetInstalledVersion());
@@ -314,7 +338,7 @@ public sealed class InstallerPipeline : IInstallerPipeline
         // Loaded before any mutation so a malformed map fails while the machine is still clean.
         var serviceMapPath = Path.IsPathRooted(opts.ServiceMapPath)
             ? opts.ServiceMapPath
-            : Path.Combine(mediaDir, opts.ServiceMapPath);
+            : media.Resolve(VerifiedMedia.ConfigPayload, Path.GetFileName(opts.ServiceMapPath), "the service map");
         // Only the components this installation includes. A component that is off must not be
         // registered as a Windows service and left stopped - a stopped service looks like a
         // failed install to every operator and every monitoring tool that ever sees it.
@@ -369,7 +393,7 @@ public sealed class InstallerPipeline : IInstallerPipeline
         // by name (${Service:l3_FAS:Port}), not just the four infrastructure ports.
         var configResult = await _configGenerator.GenerateAllAsync(
             request.SiteConfig,
-            Path.Combine(mediaDir, "config-templates"),
+            media.PayloadDirectory(VerifiedMedia.TemplatesPayload, "the configuration templates"),
             Path.Combine(opts.DataRoot, "config"),
             services,
             ct);
@@ -381,7 +405,7 @@ public sealed class InstallerPipeline : IInstallerPipeline
         }
 
         await _stateMachine.TransitionAsync(InstallerPhase.Migrate, "database", cancellationToken: ct);
-        var baselineDdl = Path.Combine(mediaDir, "db", "stable_baseline_ddl.sql");
+        var baselineDdl = media.Resolve(VerifiedMedia.SchemaPayload, "stable_baseline_ddl.sql", "the baseline schema");
         var dbResult = await _database.ExecuteAsync(baselineDdl, ct);
         steps.AddRange(dbResult.Steps.Select(x => $"database: {x}"));
 
@@ -389,8 +413,8 @@ public sealed class InstallerPipeline : IInstallerPipeline
         // parameters, menus, users or society; the site data pack is where those come from.
         // The classification the pack was cut with travels on the medium and is kept beside
         // the generated configuration for the sync agent, which reads the same file.
-        var classificationOnMedium = Path.Combine(mediaDir, "config", "pacs-table-classification.json");
-        if (File.Exists(classificationOnMedium))
+        var classificationOnMedium = media.TryResolve(VerifiedMedia.ConfigPayload, "pacs-table-classification.json");
+        if (classificationOnMedium is not null)
         {
             var classificationTarget = Path.Combine(opts.DataRoot, "config", "pacs-table-classification.json");
             Directory.CreateDirectory(Path.GetDirectoryName(classificationTarget)!);
@@ -416,7 +440,7 @@ public sealed class InstallerPipeline : IInstallerPipeline
         var rewrite = await _payloadConfig.RewriteAsync(
             Path.Combine(_binaries.ResolveCurrent() ?? Path.Combine(opts.ReleasesPath, manifest.Manifest.StackVersion), "services"),
             Path.Combine(opts.DataRoot, "config", "appsettings.Site.json"),
-            Path.Combine(mediaDir, "config", PayloadConfigRewriter.SiblingUrlsFileName),
+            media.TryResolve(VerifiedMedia.ConfigPayload, PayloadConfigRewriter.SiblingUrlsFileName),
             services,
             ct);
         steps.Add($"Rewrote {rewrite.Rewritten.Count} service configuration(s) for this node" +

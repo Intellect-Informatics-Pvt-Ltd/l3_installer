@@ -4,6 +4,7 @@ using Installer.Core.SiteConfig;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Hosting;
 using SharedKernel.Contracts;
 
 namespace Installer.CLI;
@@ -130,7 +131,7 @@ public static class Program
 
         var services = new ServiceCollection();
         services.AddSingleton<IConfiguration>(configuration);
-        services.AddLogging(builder => ConfigureLogging(builder, options));
+        services.AddLogging(builder => ConfigureLogging(builder, options, configuration));
         services.AddInstaller(configuration);
 
         // Validate the graph now rather than on first resolve: a missing registration should
@@ -143,12 +144,13 @@ public static class Program
     }
 
     /// <summary>
-    /// AC-2.4 requires that quiet mode writes no console output. Until a file sink is wired
-    /// (Serilog via Intellect.Erp.Observability, tasks.md 12.4), quiet mode is honoured by
-    /// emitting nothing rather than by pretending the file log exists — an operator who is told
-    /// "see the log file" and finds none is worse off than one told there is no log yet.
+    /// Console unless quiet; ALWAYS a file (12.4). AC-2.4 requires that quiet mode writes no
+    /// console output, and an unattended rollout with no console and no file would leave an
+    /// operator who is told "see the log" with nothing to see. The file goes under the data
+    /// root's installer log directory (<c>Installer:DataRoot</c> from configuration, the same
+    /// value the pipeline uses), one file per run, flushed on every line, root-only.
     /// </summary>
-    private static void ConfigureLogging(ILoggingBuilder builder, CliOptions options)
+    private static void ConfigureLogging(ILoggingBuilder builder, CliOptions options, IConfiguration configuration)
     {
         builder.ClearProviders();
 
@@ -161,7 +163,29 @@ public static class Program
             });
         }
 
-        builder.SetMinimumLevel(options.Verbose ? LogLevel.Debug : LogLevel.Information);
+        var minimum = options.Verbose ? LogLevel.Debug : LogLevel.Information;
+        var dataRoot = configuration["Installer:DataRoot"];
+        if (!string.IsNullOrWhiteSpace(dataRoot))
+        {
+            try
+            {
+                var directory = Path.Combine(dataRoot, "logs", "installer");
+                var provider = new RunLogFileProvider(directory, $"installer-{options.Mode?.ToString().ToLowerInvariant() ?? "auto"}", LogLevel.Debug);
+                builder.AddProvider(provider);
+                if (!options.Quiet)
+                {
+                    Console.Error.WriteLine($"log: {provider.Path}");
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Said, never swallowed: a run without a file log is a run whose support bundle
+                // will be missing the one thing the bundle exists to carry.
+                Console.Error.WriteLine($"warning: no file log could be opened under {dataRoot}/logs/installer ({ex.Message}); console only.");
+            }
+        }
+
+        builder.SetMinimumLevel(minimum);
     }
 
     private static void Report(PipelineResult result, bool quiet)

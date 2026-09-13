@@ -1,3 +1,8 @@
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
+using Microsoft.Extensions.Options;
+using SharedKernel.Configuration;
+using SharedKernel.Security;
 using FluentAssertions;
 using Installer.Core.SiteConfig;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -12,7 +17,26 @@ namespace Installer.UnitTests;
 public sealed class SiteConfigLoaderTests : IDisposable
 {
     private readonly List<string> _temp = [];
-    private static SiteConfigLoader NewLoader() => new(NullLogger<SiteConfigLoader>.Instance);
+    private readonly X509Certificate2 _releaseKey = SelfSigned("CN=ePACS release key (test)");
+    private readonly X509Certificate2 _impostor = SelfSigned("CN=impostor");
+
+    private SiteConfigLoader NewLoader(string? pinned = null) =>
+        new(new CmsCodeSigner(() => null), Options.Create(new InstallerOptions { DataRoot = "/d", BinaryRoot = "/b", ExpectedSigningThumbprint = pinned ?? _releaseKey.Thumbprint }), NullLogger<SiteConfigLoader>.Instance);
+
+    private static X509Certificate2 SelfSigned(string subject)
+    {
+        using var rsa = RSA.Create(2048);
+        return new CertificateRequest(subject, rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+            .CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
+    }
+
+    /// <summary>Signs a pack the way the state does: a detached CMS sidecar over the exact bytes.</summary>
+    private async Task<string> SignAsync(string path, X509Certificate2? with = null)
+    {
+        await new CmsCodeSigner(() => with ?? _releaseKey).SignFileAsync(path, path + SiteConfigLoader.SignatureSuffix);
+        _temp.Add(path + SiteConfigLoader.SignatureSuffix);
+        return path;
+    }
 
     private string WritePack(string json)
     {
@@ -34,13 +58,46 @@ public sealed class SiteConfigLoaderTests : IDisposable
         """;
 
     [Fact]
-    public async Task Loads_a_valid_signed_pack()
+    public async Task Loads_a_pack_whose_detached_signature_verifies_against_the_pinned_release_key()
     {
-        var pack = await NewLoader().LoadAsync(WritePack(Valid));
+        var path = await SignAsync(WritePack(Valid));
+
+        var pack = await NewLoader().LoadAsync(path);
 
         pack.PacsId.Should().Be("AP-XYZ-0001");
         pack.StateCode.Should().Be("AP");
         pack.DataRoot.Should().Be(@"D:\ePACSData");
+    }
+
+    [Fact]
+    public async Task An_embedded_signature_field_alone_is_refused_because_no_build_ever_verified_one()
+    {
+        // 7.9: until 2026-09-13 a non-placeholder 'signature' field was "presence only" - it
+        // made an unsigned pack look signed. Now it is refused, naming the sidecar to produce.
+        var act = () => NewLoader().LoadAsync(WritePack(Valid));
+
+        await act.Should().ThrowAsync<SiteConfigException>().WithMessage("*embedded*never verified*openssl cms*");
+    }
+
+    [Fact]
+    public async Task A_pack_altered_after_signing_is_refused()
+    {
+        var path = await SignAsync(WritePack(Valid));
+        File.WriteAllText(path, File.ReadAllText(path).Replace("\"AP\"", "\"KA\"", StringComparison.Ordinal));
+
+        var act = () => NewLoader().LoadAsync(path);
+
+        await act.Should().ThrowAsync<SiteConfigException>().WithMessage("*does not verify*nothing was read*");
+    }
+
+    [Fact]
+    public async Task A_pack_signed_by_an_impostor_is_refused()
+    {
+        var path = await SignAsync(WritePack(Valid), with: _impostor);
+
+        var act = () => NewLoader().LoadAsync(path);
+
+        await act.Should().ThrowAsync<SiteConfigException>().WithMessage("*does not verify*");
     }
 
     [Fact]
@@ -137,6 +194,8 @@ public sealed class SiteConfigLoaderTests : IDisposable
 
     public void Dispose()
     {
+        _releaseKey.Dispose();
+        _impostor.Dispose();
         foreach (var p in _temp.Where(File.Exists)) File.Delete(p);
     }
 }

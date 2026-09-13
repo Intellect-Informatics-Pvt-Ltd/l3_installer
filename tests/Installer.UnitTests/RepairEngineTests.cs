@@ -35,16 +35,8 @@ public sealed class RepairEngineTests : IDisposable
 
     private InstallerOptions Opts => new() { DataRoot = Path.Combine(_root, "data"), BinaryRoot = Path.Combine(_root, "bin") };
 
-    private static ReleaseManifest Manifest(string version = "3.3.0") => new()
-    {
-        Manifest = new ManifestMetadata
-        {
-            ManifestId = "rel", StackVersion = version, SchemaVersion = 25, MinOsBuild = 1,
-            InstallerToolVersion = "4", SigningCertThumbprint = "A", CreatedAt = DateTimeOffset.UnixEpoch, CreatedBy = "t"
-        },
-        Payloads = [new PayloadEntry { Name = "p", File = "p.zip", Sha256 = "x", SizeBytes = 1, InstallOrder = 1, Required = true }],
-        Compatibility = new CompatibilityInfo { MinUpgradeFrom = "3.2.0", MaxUpgradeFrom = "3.2.9", RequiresSideBySide = false }
-    };
+    /// <summary>A real medium on disk: the control payloads are re-hashed at use (G35).</summary>
+    private ReleaseManifest Manifest(string version = "3.3.0") => MediumFixture.Write(Path.Combine(_root, "media"), version);
 
     public RepairEngineTests()
     {

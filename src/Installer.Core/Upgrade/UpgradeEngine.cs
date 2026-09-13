@@ -3,6 +3,7 @@ using BackupRestore.Backup;
 using BackupRestore.Models;
 using BackupRestore.Restore;
 using Installer.Actions.Install;
+using Installer.Core.Pipeline;
 using Installer.Core.Schema;
 using ManifestVerifier;
 using Microsoft.Extensions.Logging;
@@ -160,10 +161,13 @@ public sealed class UpgradeEngine : IUpgradeEngine
             // defaults. The node's facts go into it BEFORE the switch, while the old release is
             // still what 'current' points at, so an interrupted rewrite costs nothing (G26).
             var services = await _serviceMap.LoadAsync(cancellationToken);
+            // The staged release's own config/ payload IS the verified copy: it was hashed by the
+            // manifest and extracted by the same step that put the binaries there.
+            var stagedSiblingUrls = Path.Combine(_options.Value.ReleasesPath, newVersion, VerifiedMedia.ConfigPayload, PayloadConfigRewriter.SiblingUrlsFileName);
             var rewrite = await _payloadConfig.RewriteAsync(
                 Path.Combine(_options.Value.ReleasesPath, newVersion, "services"),
                 Path.Combine(_options.Value.DataRoot, "config", "appsettings.Site.json"),
-                Path.Combine(payloadDirectory, "config", PayloadConfigRewriter.SiblingUrlsFileName),
+                File.Exists(stagedSiblingUrls) ? stagedSiblingUrls : null,
                 services,
                 cancellationToken);
             LogEvents.UpgradeConfigRewritten(_logger, newVersion, rewrite.Rewritten.Count);

@@ -68,8 +68,8 @@ internal static partial class LogEvents
     public static partial void SiteConfigLoaded(ILogger logger, string pacsId, string stateCode, string path);
 
     [LoggerMessage(EventId = 1031, Level = LogLevel.Information,
-        Message = "Site config {Path} carries a signature. NOTE: presence only - cryptographic verification is not implemented (tasks.md 7.9).")]
-    public static partial void SiteConfigSignaturePresent(ILogger logger, string path);
+        Message = "Site configuration pack {Path} signature VERIFIED (signer {Thumbprint}).")]
+    public static partial void SiteConfigSignatureVerified(ILogger logger, string path, string thumbprint);
 
     [LoggerMessage(EventId = 1032, Level = LogLevel.Warning,
         Message = "Site config {Path} is UNSIGNED and was accepted because --allow-unsigned-config was passed. Never use this on an installation.")]
