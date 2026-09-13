@@ -69,4 +69,18 @@ public sealed class BackupEncryptionOptions
 
     /// <summary>Certificate thumbprint for key wrapping (enables restore-to-new-machine).</summary>
     public string? CertificateThumbprint { get; set; }
+
+    /// <summary>
+    /// Path to the state's recovery PUBLIC key (PEM). When set, every backup's data key is also
+    /// wrapped to it, so a re-imaged or replacement node can be restored by the holder of the
+    /// private key. Without it a backup can be restored only by the node that wrote it - which
+    /// is stated in every manifest as <c>KeyProtection</c>, never assumed.
+    /// </summary>
+    public string? RecoveryPublicKeyPath { get; set; }
+
+    /// <summary>
+    /// Path to the state's recovery PRIVATE key (PEM), for a restore on a node that cannot
+    /// unwrap locally. Supplied at restore time, never stored on the node.
+    /// </summary>
+    public string? RecoveryPrivateKeyPath { get; set; }
 }

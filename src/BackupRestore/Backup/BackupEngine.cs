@@ -1,7 +1,9 @@
 using System.Globalization;
+using System.IO.Compression;
 using Installer.Actions.Database;
 using SharedKernel.Security;
 using System.Security.Cryptography;
+using BackupRestore.Crypto;
 using BackupRestore.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -23,6 +25,11 @@ namespace BackupRestore.Backup;
 public sealed class BackupEngine : IBackupEngine
 {
     private const string RootPasswordSecretKey = "mysql.root.password";
+
+    /// <summary>The node's key-encryption key for backups, in the secret store.</summary>
+    public const string BackupKekSecretName = "backup.kek";
+    public const string ManifestFileName = "backup-manifest.json";
+    public const string ManifestMacFileName = "backup-manifest.json.mac";
 
     private readonly IOptions<BackupOptions> _backupOptions;
     private readonly IOptions<InstallerOptions> _installerOptions;
@@ -107,19 +114,60 @@ public sealed class BackupEngine : IBackupEngine
         await BackupAttachmentsAsync(attachDir, dataRoot, cancellationToken);
         files.AddRange(await CatalogFilesAsync(attachDir, backupDir, "attachments", cancellationToken));
 
-        // Step 6: Generate manifest
+        // Step 6: Encrypt every file in place. The plaintext hashes were taken above; the
+        // ciphertext hashes are taken now, so the package can be verified without the key and
+        // the contents after decryption - both, separately.
+        progress?.Invoke("Encrypting", 90);
+        var dek = BackupCrypto.NewKey();
+        var kek = await _secrets.GetOrCreateKeyAsync(BackupKekSecretName, BackupCrypto.KeyBytes, cancellationToken);
+        var encrypted = new List<BackupFileEntry>(files.Count);
+        foreach (var entry in files)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var plain = Path.Combine(backupDir, entry.RelativePath);
+            var enc = plain + BackupCrypto.Suffix;
+            await BackupCrypto.EncryptFileAsync(plain, enc, dek, cancellationToken);
+            File.Delete(plain);
+            encrypted.Add(entry with
+            {
+                RelativePath = entry.RelativePath + BackupCrypto.Suffix,
+                EncryptedSha256 = await ComputeHashAsync(enc, cancellationToken),
+                EncryptedSizeBytes = new FileInfo(enc).Length
+            });
+        }
+
+        // The data key, wrapped: always to this node; to the state's recovery key when one is
+        // configured. What a manifest says about KeyProtection is what is true of it.
+        string? recoveryWrap = null, recoveryKeyId = null;
+        if (!string.IsNullOrWhiteSpace(options.Encryption.RecoveryPublicKeyPath))
+        {
+            if (!File.Exists(options.Encryption.RecoveryPublicKeyPath))
+            {
+                throw new InvalidOperationException(
+                    $"Backup:Encryption:RecoveryPublicKeyPath names {options.Encryption.RecoveryPublicKeyPath}, which does not exist. " +
+                    "A backup that silently dropped the recovery wrap would be restorable only by this machine, which is not what was configured.");
+            }
+
+            var pem = await File.ReadAllTextAsync(options.Encryption.RecoveryPublicKeyPath, cancellationToken);
+            recoveryWrap = BackupCrypto.WrapKeyToPublicKey(dek, pem);
+            recoveryKeyId = BackupCrypto.PublicKeyId(pem);
+        }
+
+        // Step 7: Generate manifest
         progress?.Invoke("Generating manifest", 95);
         var manifest = new BackupManifest
         {
             BackupId = backupId,
-            PacsId = "CONFIGURED_VIA_EPCFG", // Resolved at runtime from site config
+            PacsId = _installerOptions.Value.SiteConfigPath is null ? "UNKNOWN" : "SEE-SITE-PACK",
             CreatedAtUtc = DateTimeOffset.UtcNow,
             CreatedBy = "installer-agent",
             BackupType = backupType,
             StackVersion = "3.2.1", // TODO: read from installed manifest
             SchemaVersion = 25, // TODO: read from schema_version_registry
-            Encryption = options.Encryption.Algorithm,
-            KeyProtection = "certificate-wrapped",
+            Encryption = "AES-256-GCM (per-file, chunked, fresh data key per backup)",
+            KeyProtection = recoveryWrap is null
+                ? "local-kek-only: restorable by THIS node only (no Backup:Encryption:RecoveryPublicKeyPath configured)"
+                : $"local-kek + recovery-rsa-oaep (key id {recoveryKeyId})",
             CertificateThumbprint = options.Encryption.CertificateThumbprint,
             Includes = new BackupIncludes
             {
@@ -132,48 +180,67 @@ public sealed class BackupEngine : IBackupEngine
             Validation = new BackupValidation
             {
                 ChecksumVerified = true,
-                DumpReadable = true,
-                ManifestSigned = false // TODO: sign with release CA
+                DumpReadable = dumpBytes > 0,
+                ManifestSigned = true,
+                SignatureType = "HMAC-SHA256(local KEK) - a MAC, not a certificate signature"
             },
-            Files = files
+            Files = encrypted,
+            KeyWrap = new BackupKeyWrap
+            {
+                Algorithm = "AES-256-GCM(KEK) / RSA-OAEP-SHA256(recovery)",
+                Local = BackupCrypto.WrapKey(dek, kek),
+                Recovery = recoveryWrap,
+                RecoveryKeyId = recoveryKeyId
+            }
         };
 
-        // Write manifest
+        CryptographicOperations.ZeroMemory(dek);
+
+        // Write manifest, then its MAC over the exact bytes written.
         var manifestJson = System.Text.Json.JsonSerializer.Serialize(manifest, ManifestJsonOptions);
-        await File.WriteAllTextAsync(Path.Combine(backupDir, "backup-manifest.json"), manifestJson, cancellationToken);
+        var manifestPath = Path.Combine(backupDir, ManifestFileName);
+        await File.WriteAllTextAsync(manifestPath, manifestJson, cancellationToken);
+        var manifestBytes = await File.ReadAllBytesAsync(manifestPath, cancellationToken);
+        await File.WriteAllTextAsync(Path.Combine(backupDir, ManifestMacFileName), BackupCrypto.ManifestMac(manifestBytes, kek) + "\n", cancellationToken);
 
         progress?.Invoke("Backup complete", 100);
-        LogEvents.BackupCreated(_logger, backupId, files.Count, backupDir);
+        LogEvents.BackupCreated(_logger, backupId, encrypted.Count, backupDir);
 
-        return manifest;
+        return manifest with { PackagePath = backupDir };
     }
 
     public async Task<BackupVerificationResult> VerifyBackupAsync(string backupPath, CancellationToken cancellationToken = default)
     {
         var errors = new List<string>();
 
-        // Check manifest exists
-        var manifestPath = Path.Combine(backupPath, "backup-manifest.json");
+        var manifestPath = Path.Combine(backupPath, ManifestFileName);
         if (!File.Exists(manifestPath))
         {
             return new BackupVerificationResult { Valid = false, Errors = ["Backup manifest not found."] };
         }
 
-        // Parse manifest
-        var manifestJson = await File.ReadAllTextAsync(manifestPath, cancellationToken);
-        var manifest = System.Text.Json.JsonSerializer.Deserialize<BackupManifest>(manifestJson);
+        var manifestBytes = await File.ReadAllBytesAsync(manifestPath, cancellationToken);
+        BackupManifest? manifest;
+        try
+        {
+            manifest = System.Text.Json.JsonSerializer.Deserialize<BackupManifest>(manifestBytes);
+        }
+        catch (System.Text.Json.JsonException ex)
+        {
+            return new BackupVerificationResult { Valid = false, Errors = [$"Backup manifest does not parse: {ex.Message}"] };
+        }
+
         if (manifest is null)
         {
             return new BackupVerificationResult { Valid = false, Errors = ["Backup manifest is invalid."] };
         }
 
-        // Verify file checksums
+        // 1. Every file, by the hash that can be checked WITHOUT the key.
         var checksumValid = true;
         foreach (var file in manifest.Files)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var filePath = Path.Combine(backupPath, file.RelativePath);
-
             if (!File.Exists(filePath))
             {
                 errors.Add($"Missing file: {file.RelativePath}");
@@ -181,11 +248,91 @@ public sealed class BackupEngine : IBackupEngine
                 continue;
             }
 
+            var expected = file.EncryptedSha256 ?? file.Sha256;
             var actualHash = await ComputeHashAsync(filePath, cancellationToken);
-            if (!string.Equals(actualHash, file.Sha256, StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(actualHash, expected, StringComparison.OrdinalIgnoreCase))
             {
                 errors.Add($"Checksum mismatch: {file.RelativePath}");
                 checksumValid = false;
+            }
+        }
+
+        // 2. The manifest's MAC, when this node holds the key that made it.
+        var macValid = false;
+        var macPath = Path.Combine(backupPath, ManifestMacFileName);
+        if (manifest.KeyWrap is null)
+        {
+            errors.Add("This package is not encrypted (written before 2026-09-13); it can be verified by hash only and will not be restored by this build.");
+        }
+        else if (!File.Exists(macPath))
+        {
+            errors.Add("The manifest MAC is missing: the manifest cannot be shown to be the one this node wrote.");
+        }
+        else
+        {
+            var kek = await _secrets.RetrieveAsync(BackupKekSecretName, cancellationToken);
+            if (kek is null)
+            {
+                errors.Add("This node holds no backup key, so the manifest MAC and the data key cannot be checked here (a replacement node needs the state's recovery key).");
+            }
+            else
+            {
+                macValid = BackupCrypto.ManifestMacValid(manifestBytes, Convert.FromBase64String(kek), await File.ReadAllTextAsync(macPath, cancellationToken));
+                if (!macValid)
+                {
+                    errors.Add("The manifest MAC does not verify: the manifest was altered, or it was written by another node.");
+                }
+            }
+        }
+
+        // 3. Is the dump readable? Decrypt it (to a root-only temp file) and look for the two
+        //    markers a complete mysqldump carries. rc=0 from mysqldump was never the evidence.
+        var dumpReadable = false;
+        if (checksumValid && macValid)
+        {
+            var dumpEntry = manifest.Files.FirstOrDefault(f => f.Category == "db" && f.RelativePath.Replace('\\', '/').EndsWith("mysql-dump.sql" + BackupCrypto.Suffix, StringComparison.Ordinal));
+            if (dumpEntry is null)
+            {
+                errors.Add("The package carries no database dump.");
+            }
+            else
+            {
+                try
+                {
+                    var dek = await UnwrapAsync(manifest, cancellationToken);
+                    var temp = Path.Combine(_installerOptions.Value.ResolvedTempRoot, "verify", manifest.BackupId + ".sql");
+                    Directory.CreateDirectory(Path.GetDirectoryName(temp)!);
+                    try
+                    {
+                        await BackupCrypto.DecryptFileAsync(Path.Combine(backupPath, dumpEntry.RelativePath), temp, dek, cancellationToken);
+                        var plainHash = await ComputeHashAsync(temp, cancellationToken);
+                        if (!string.Equals(plainHash, dumpEntry.Sha256, StringComparison.OrdinalIgnoreCase))
+                        {
+                            errors.Add("The decrypted dump does not hash to what the manifest recorded.");
+                        }
+                        else
+                        {
+                            dumpReadable = await LooksLikeACompleteDumpAsync(temp, cancellationToken);
+                            if (!dumpReadable)
+                            {
+                                errors.Add("The dump decrypts but is not a complete mysqldump (missing the header or the 'Dump completed' marker).");
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        if (File.Exists(temp))
+                        {
+                            File.Delete(temp);
+                        }
+
+                        CryptographicOperations.ZeroMemory(dek);
+                    }
+                }
+                catch (CryptographicException ex)
+                {
+                    errors.Add($"The dump cannot be decrypted here: {ex.Message}");
+                }
             }
         }
 
@@ -193,10 +340,75 @@ public sealed class BackupEngine : IBackupEngine
         {
             Valid = errors.Count == 0,
             ChecksumVerified = checksumValid,
-            ManifestSignatureValid = false, // TODO: verify signature
-            DumpReadable = true, // TODO: test dump readability
+            ManifestSignatureValid = macValid,
+            DumpReadable = dumpReadable,
             Errors = errors
         };
+    }
+
+    /// <summary>
+    /// The data key, from the local wrap when this node holds the KEK, else from the recovery
+    /// wrap when a private key path is configured. Throws <see cref="CryptographicException"/>
+    /// naming which way was tried.
+    /// </summary>
+    public async Task<byte[]> UnwrapAsync(BackupManifest manifest, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        if (manifest.KeyWrap is null)
+        {
+            throw new CryptographicException("The package carries no wrapped data key: it was written before encryption existed and cannot be restored by this build.");
+        }
+
+        var kek = await _secrets.RetrieveAsync(BackupKekSecretName, cancellationToken);
+        if (kek is not null)
+        {
+            try
+            {
+                return BackupCrypto.UnwrapKey(manifest.KeyWrap.Local, Convert.FromBase64String(kek));
+            }
+            catch (CryptographicException) when (manifest.KeyWrap.Recovery is not null)
+            {
+                // Fall through to the recovery key: this node's KEK is not the one that wrote it.
+            }
+        }
+
+        var privateKeyPath = _backupOptions.Value.Encryption.RecoveryPrivateKeyPath;
+        if (manifest.KeyWrap.Recovery is not null && !string.IsNullOrWhiteSpace(privateKeyPath) && File.Exists(privateKeyPath))
+        {
+            return BackupCrypto.UnwrapKeyWithPrivateKey(manifest.KeyWrap.Recovery, await File.ReadAllTextAsync(privateKeyPath, cancellationToken));
+        }
+
+        throw new CryptographicException(
+            kek is null
+                ? "This node holds no backup key and no recovery private key was supplied (Backup:Encryption:RecoveryPrivateKeyPath). " +
+                  (manifest.KeyWrap.Recovery is null
+                      ? "The package was wrapped to its writer only (no recovery key was configured when it was taken), so it cannot be restored anywhere but that node."
+                      : $"The package is wrapped to recovery key {manifest.KeyWrap.RecoveryKeyId}; supply that private key.")
+                : "The data key does not unwrap under this node's key, and no recovery private key was supplied.");
+    }
+
+    private static async Task<bool> LooksLikeACompleteDumpAsync(string path, CancellationToken ct)
+    {
+        var info = new FileInfo(path);
+        if (info.Length < 64)
+        {
+            return false;
+        }
+
+        await using var stream = File.OpenRead(path);
+        var head = new byte[Math.Min(256, info.Length)];
+        await stream.ReadExactlyAsync(head, ct);
+        var headText = System.Text.Encoding.UTF8.GetString(head);
+        if (headText.Contains("placeholder", StringComparison.OrdinalIgnoreCase) || !headText.Contains("MySQL dump", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var tailLength = (int)Math.Min(512, info.Length);
+        stream.Seek(-tailLength, SeekOrigin.End);
+        var tail = new byte[tailLength];
+        await stream.ReadExactlyAsync(tail, ct);
+        return System.Text.Encoding.UTF8.GetString(tail).Contains("Dump completed", StringComparison.Ordinal);
     }
 
     public Task<BackupTargetValidation> ValidateTargetAsync(long estimatedSizeBytes, CancellationToken cancellationToken = default)
@@ -418,26 +630,39 @@ public sealed class BackupEngine : IBackupEngine
         return File.WriteAllTextAsync(placeholder, "{\"checkpoints\": []}\n", ct);
     }
 
-    private static Task BackupAttachmentsAsync(string attachDir, string dataRoot, CancellationToken ct)
+    /// <summary>
+    /// 15.3: every attachment, in one zip, with a per-file SHA-256 manifest beside it. The zip
+    /// is what gets encrypted; the manifest is how a restore proves each file came back whole.
+    /// Was: a text listing of the first 100 file names, which backed up nothing.
+    /// </summary>
+    private static async Task BackupAttachmentsAsync(string attachDir, string dataRoot, CancellationToken ct)
     {
-        // TODO: Create tar of attachments with per-file SHA-256 manifest
-        var sourceAttachDir = Path.Combine(dataRoot, "attachments");
-        if (Directory.Exists(sourceAttachDir))
+        var lines = new List<string>();
+        var count = 0;
+        var zipPath = Path.Combine(attachDir, "attachments.zip");
+        using (var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create))
         {
-            var manifestLines = new List<string>();
-            foreach (var file in Directory.GetFiles(sourceAttachDir, "*.*", SearchOption.AllDirectories).Take(100)) // Limit for safety
+            foreach (var root in new[] { Path.Combine(dataRoot, "attachments"), Path.Combine(dataRoot, "files") })
             {
-                ct.ThrowIfCancellationRequested();
-                var relativePath = Path.GetRelativePath(sourceAttachDir, file);
-                manifestLines.Add($"{relativePath}");
-            }
+                if (!Directory.Exists(root))
+                {
+                    continue;
+                }
 
-            return File.WriteAllTextAsync(
-                Path.Combine(attachDir, "files-manifest.txt"),
-                string.Join('\n', manifestLines), ct);
+                var prefix = Path.GetFileName(root);
+                foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var relative = prefix + "/" + Path.GetRelativePath(root, file).Replace('\\', '/');
+                    zip.CreateEntryFromFile(file, relative, CompressionLevel.Fastest);
+                    lines.Add($"{await ComputeHashAsync(file, ct)}  {relative}");
+                    count++;
+                }
+            }
         }
 
-        return Task.CompletedTask;
+        await File.WriteAllTextAsync(Path.Combine(attachDir, "files-manifest.sha256"), string.Join('\n', lines) + (lines.Count > 0 ? "\n" : ""), ct);
+        await File.WriteAllTextAsync(Path.Combine(attachDir, "files-count.txt"), count.ToString(CultureInfo.InvariantCulture) + "\n", ct);
     }
 
     private static async Task<List<BackupFileEntry>> CatalogFilesAsync(string directory, string backupRoot, string category, CancellationToken ct)

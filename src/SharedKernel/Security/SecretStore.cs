@@ -170,14 +170,66 @@ public sealed partial class SecretStore : ISecretStore
         return decryptor.TransformFinalBlock(ciphertext, 0, ciphertext.Length);
     }
 
+    /// <summary>
+    /// The store's master key: 32 random bytes in <c>keys/master.key</c>, mode 0600, created on
+    /// first use.
+    ///
+    /// WHAT IT REPLACED (2026-09-13). Until then the key was SHA-256 of
+    /// <c>"{MachineName}:{DataRoot}:ePACS-SecretStore-v1"</c> — two values readable by anyone
+    /// with a shell, so <c>secrets.enc</c>, which holds the database root and application
+    /// passwords, was obfuscated rather than encrypted. A random key on disk beside it is not
+    /// DPAPI either, but it is the difference between "copy one file" and "copy two files from
+    /// a root-only directory", and it is what makes an encrypted backup meaningful: the backup
+    /// deliberately EXCLUDES this file, so a backup that carries <c>secrets.enc</c> carries
+    /// nothing readable without the node or the state's recovery key.
+    /// </summary>
     private byte[] DeriveKey()
     {
-        // Derive key from machine name + data root path (machine-specific)
-        // In production, this would use DPAPI or a certificate-wrapped key
-        var seed = $"{Environment.MachineName}:{_options.Value.DataRoot}:ePACS-SecretStore-v1";
-        var seedBytes = Encoding.UTF8.GetBytes(seed);
-        return SHA256.HashData(seedBytes);
+        var path = Path.Combine(_options.Value.DataRoot, "keys", "master.key");
+        if (File.Exists(path))
+        {
+            var existing = File.ReadAllBytes(path);
+            if (existing.Length == 32)
+            {
+                return existing;
+            }
+
+            throw new InvalidOperationException($"{path} exists but is not a 32-byte key. The secret store cannot be opened; nothing has been changed.");
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var key = RandomNumberGenerator.GetBytes(32);
+        var temp = path + ".tmp";
+        File.WriteAllBytes(temp, key);
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(temp, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+
+        File.Move(temp, path, overwrite: false);
+        LogMasterKeyCreated(_logger, path);
+        return key;
     }
+
+    public async Task<byte[]> GetOrCreateKeyAsync(string name, int bytes, CancellationToken cancellationToken = default)
+    {
+        var existing = await RetrieveAsync(name, cancellationToken);
+        if (existing is not null)
+        {
+            var material = Convert.FromBase64String(existing);
+            if (material.Length == bytes)
+            {
+                return material;
+            }
+        }
+
+        var fresh = RandomNumberGenerator.GetBytes(bytes);
+        await StoreAsync(name, Convert.ToBase64String(fresh), cancellationToken);
+        return fresh;
+    }
+
+    [LoggerMessage(EventId = 2803, Level = LogLevel.Information, Message = "Secret store master key created at {Path} (0600). Back it up out of band: an encrypted backup deliberately excludes it.")]
+    private static partial void LogMasterKeyCreated(ILogger logger, string path);
 
     [GeneratedRegex(@"(?i)(password|secret|private_key|connection_string|api_key|token)\s*[=:]\s*[""']?[^\s""']{8,}", RegexOptions.Compiled)]
     private static partial Regex AnySecretPattern();

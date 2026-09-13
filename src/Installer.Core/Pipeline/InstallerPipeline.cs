@@ -8,6 +8,8 @@ using Installer.Actions.Uninstall;
 using Installer.Core.StateMachine;
 using Installer.Core.Upgrade;
 using Installer.Core.Repair;
+using BackupRestore.Backup;
+using BackupRestore.Models;
 using BackupRestore.Restore;
 using ManifestVerifier;
 using Microsoft.Extensions.Logging;
@@ -55,6 +57,7 @@ public sealed class InstallerPipeline : IInstallerPipeline
     private readonly IAclEngine _acl;
     private readonly IFirewallManager _firewall;
     private readonly IHealthAggregator _health;
+    private readonly IBackupEngine _backup;
     private readonly IOptions<InstallerOptions> _options;
     private readonly IOptions<ComponentsOptions> _components;
     private readonly ILogger<InstallerPipeline> _logger;
@@ -90,6 +93,7 @@ public sealed class InstallerPipeline : IInstallerPipeline
         IAclEngine acl,
         IFirewallManager firewall,
         IHealthAggregator health,
+        IBackupEngine backup,
         IOptions<InstallerOptions> options,
         IOptions<ComponentsOptions> components,
         ILogger<InstallerPipeline> logger)
@@ -116,6 +120,7 @@ public sealed class InstallerPipeline : IInstallerPipeline
         _acl = acl;
         _firewall = firewall;
         _health = health;
+        _backup = backup;
         _options = options;
         _components = components;
         _logger = logger;
@@ -155,9 +160,7 @@ public sealed class InstallerPipeline : IInstallerPipeline
 
                 // Still without an implementing type. Saying so is the correct behaviour: see
                 // PipelineOutcome.NotImplemented.
-                InstallerMode.Backup => NotImplemented(mode, steps,
-                    "Backup is not usable in this build: BackupEngine writes a placeholder file instead of a MySQL dump " +
-                    "(tasks.md §15.2). A backup taken now would restore nothing."),
+                InstallerMode.Backup    => await RunBackupAsync(request, mode, steps, cancellationToken),
 
                 _ => NotImplemented(mode, steps, $"Mode {mode} is not supported by this build.")
             };
@@ -500,6 +503,43 @@ public sealed class InstallerPipeline : IInstallerPipeline
                 "Sync state must be reconciled before this node resumes sending.")
             : PipelineResult.Failed(PipelineOutcome.OperationFailed, mode, InstallerPhase.Restore,
                 result.ErrorMessage ?? "The restore failed.", steps);
+    }
+
+    // ── Backup ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Take a package, then verify it as it sits - hashes, the manifest MAC, the dump decrypts
+    /// and is complete. A backup that was written and cannot be read back is reported as a
+    /// failure, not a success with a caveat: the operator holding a stick must know whether it
+    /// is a way back.
+    /// </summary>
+    private async Task<PipelineResult> RunBackupAsync(
+        PipelineRequest request, InstallerMode mode, List<string> steps, CancellationToken ct)
+    {
+        if (request.DryRun)
+        {
+            steps.Add("DRY RUN — a backup would dump the database (--single-transaction), copy the generated " +
+                      "configuration and key metadata, archive attachments with per-file hashes, encrypt every file " +
+                      "under a fresh data key (AES-256-GCM), wrap that key to this node and to the state's recovery key " +
+                      "if configured, MAC the manifest, and then VERIFY the package by reading it back. Re-run with --apply.");
+            return PipelineResult.Success(mode, InstallerPhase.Load, steps, "Dry run complete. Nothing was changed.");
+        }
+
+        var manifest = await _backup.CreateBackupAsync(BackupType.Manual, (message, percent) => steps.Add($"[{percent}%] {message}"), ct);
+        steps.Add($"Backup {manifest.BackupId}: {manifest.Files.Count} file(s), {manifest.KeyProtection}.");
+
+        var location = manifest.PackagePath ?? throw new InvalidOperationException("The backup engine did not report where it wrote the package.");
+        var verified = await _backup.VerifyBackupAsync(location, ct);
+        if (!verified.Valid)
+        {
+            return PipelineResult.Failed(PipelineOutcome.OperationFailed, mode, InstallerPhase.Load,
+                $"Backup {manifest.BackupId} was written but does not verify: {string.Join("; ", verified.Errors)}. " +
+                "It is NOT a way back; do not rely on it.", steps);
+        }
+
+        steps.Add($"Verified: checksums {(verified.ChecksumVerified ? "ok" : "FAILED")}, manifest MAC {(verified.ManifestSignatureValid ? "ok" : "FAILED")}, dump {(verified.DumpReadable ? "decrypts and is complete" : "NOT readable")}.");
+        return PipelineResult.Success(mode, InstallerPhase.Success, steps,
+            $"Backup {manifest.BackupId} taken and verified at {location}. {manifest.KeyProtection}.");
     }
 
     // ── Repair ───────────────────────────────────────────────────────────────

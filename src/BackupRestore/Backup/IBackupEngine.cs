@@ -39,6 +39,13 @@ public interface IBackupEngine
     Task<BackupTargetValidation> ValidateTargetAsync(
         long estimatedSizeBytes,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The package's data key: from this node's KEK, or from the state's recovery private key
+    /// when configured. Throws <see cref="System.Security.Cryptography.CryptographicException"/>
+    /// naming which way was tried.
+    /// </summary>
+    Task<byte[]> UnwrapAsync(Models.BackupManifest manifest, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

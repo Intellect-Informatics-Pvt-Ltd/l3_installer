@@ -1,7 +1,9 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.IO.Compression;
 using BackupRestore.Backup;
+using BackupRestore.Crypto;
 using BackupRestore.Models;
 using Installer.Actions.Database;
 using Microsoft.Extensions.Logging;
@@ -69,12 +71,23 @@ public sealed class RestoreEngine : IRestoreEngine
 
         var warnings = new List<string>();
 
-        // ── 1. Verify ────────────────────────────────────────────────────────
+        // ── 1. Verify, then open ─────────────────────────────────────────────
+        // The package is verified as it sits - hashes, the manifest MAC, the dump decrypts and
+        // is complete - before a single byte is unwrapped for use. Then it is decrypted into a
+        // root-only staging directory, and the rest of the restore reads from THAT.
         progress?.Invoke("Verifying the backup package", 5);
         var manifest = await ReadManifestAsync(backupPath, cancellationToken);
-        await VerifyPackageAsync(backupPath, manifest, cancellationToken);
+        var verified = await _backupEngine.VerifyBackupAsync(backupPath, cancellationToken);
+        if (!verified.Valid)
+        {
+            throw new RestoreException(
+                $"The backup at {backupPath} does not verify: {string.Join("; ", verified.Errors)}. Nothing has been changed.");
+        }
 
-        var dumpPath = Path.Combine(backupPath, "db", "mysql-dump.sql");
+        progress?.Invoke("Decrypting the backup package", 10);
+        var staging = Path.Combine(_installerOptions.Value.ResolvedTempRoot, "restore", manifest.BackupId);
+        await OpenPackageAsync(backupPath, manifest, staging, cancellationToken);
+        var dumpPath = Path.Combine(staging, "db", "mysql-dump.sql");
         if (!File.Exists(dumpPath))
         {
             throw new RestoreException(
@@ -91,6 +104,8 @@ public sealed class RestoreEngine : IRestoreEngine
                 "contain the literal text '-- MySQL dump placeholder' and restore nothing. This backup cannot be used.");
         }
 
+        try
+        {
         // ── 2. Safety backup — the hinge ─────────────────────────────────────
         string? safetyBackupId = null;
         if (createSafetyBackup)
@@ -126,8 +141,8 @@ public sealed class RestoreEngine : IRestoreEngine
         }
 
         progress?.Invoke("Restoring attachments and configuration", 75);
-        var restoredFiles = await RestoreDirectoryAsync(backupPath, "config", "config", cancellationToken);
-        var restoredAttachments = await RestoreDirectoryAsync(backupPath, "attachments", "files", cancellationToken);
+        var restoredFiles = await RestoreDirectoryAsync(staging, "config", "config", cancellationToken);
+        var restoredAttachments = await RestoreAttachmentsAsync(staging, cancellationToken);
 
         LogEvents.RestoreCompleted(_logger, manifest.BackupId, before, after);
         progress?.Invoke("Restore complete", 100);
@@ -149,6 +164,121 @@ public sealed class RestoreEngine : IRestoreEngine
                  $"Attachments restored: {restoredAttachments.ToString(CultureInfo.InvariantCulture)}.",
                  "Sync state must be reconciled before this node resumes sending."]).ToList()
         };
+        }
+        finally
+        {
+            // The plaintext staging copy exists only for the duration of the restore.
+            if (Directory.Exists(staging))
+            {
+                Directory.Delete(staging, recursive: true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Decrypts every manifest entry into <paramref name="staging"/> (root-only), checking each
+    /// plaintext hash against the manifest. A file that does not hash to what was recorded is a
+    /// refusal before the safety backup - a bad package costs nothing.
+    /// </summary>
+    private async Task OpenPackageAsync(string backupPath, BackupManifest manifest, string staging, CancellationToken ct)
+    {
+        if (Directory.Exists(staging))
+        {
+            Directory.Delete(staging, recursive: true);
+        }
+
+        Directory.CreateDirectory(staging);
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(staging, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+
+        var dek = await _backupEngine.UnwrapAsync(manifest, ct);
+        try
+        {
+            foreach (var entry in manifest.Files)
+            {
+                ct.ThrowIfCancellationRequested();
+                var source = Path.Combine(backupPath, entry.RelativePath);
+                var relativePlain = entry.RelativePath.EndsWith(BackupCrypto.Suffix, StringComparison.Ordinal)
+                    ? entry.RelativePath[..^BackupCrypto.Suffix.Length]
+                    : entry.RelativePath;
+                var target = Path.Combine(staging, relativePlain);
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                await BackupCrypto.DecryptFileAsync(source, target, dek, ct);
+
+                await using var stream = File.OpenRead(target);
+                var actual = Convert.ToHexString(await SHA256.HashDataAsync(stream, ct)).ToLowerInvariant();
+                if (!string.Equals(actual, entry.Sha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new RestoreException(
+                        $"{relativePlain} decrypted but does not hash to what the manifest recorded. The package is not what it says it is; nothing has been changed.");
+                }
+            }
+        }
+        finally
+        {
+            System.Security.Cryptography.CryptographicOperations.ZeroMemory(dek);
+        }
+    }
+
+    /// <summary>15.3's other half: the attachments zip back into files/, each file checked against the per-file manifest.</summary>
+    private async Task<int> RestoreAttachmentsAsync(string staging, CancellationToken ct)
+    {
+        var zipPath = Path.Combine(staging, "attachments", "attachments.zip");
+        var manifestPath = Path.Combine(staging, "attachments", "files-manifest.sha256");
+        if (!File.Exists(zipPath))
+        {
+            return 0;
+        }
+
+        var expected = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (File.Exists(manifestPath))
+        {
+            foreach (var line in await File.ReadAllLinesAsync(manifestPath, ct))
+            {
+                var split = line.IndexOf("  ", StringComparison.Ordinal);
+                if (split > 0)
+                {
+                    expected[line[(split + 2)..]] = line[..split];
+                }
+            }
+        }
+
+        var dataRoot = _installerOptions.Value.DataRoot;
+        var count = 0;
+        using var zip = ZipFile.OpenRead(zipPath);
+        foreach (var entry in zip.Entries)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (entry.FullName.EndsWith('/'))
+            {
+                continue;
+            }
+
+            // Entries are "<attachments|files>/<relative>", back to the same root under DataRoot.
+            var target = Path.GetFullPath(Path.Combine(dataRoot, entry.FullName));
+            if (!target.StartsWith(Path.GetFullPath(dataRoot) + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            {
+                throw new RestoreException($"The attachments archive carries an entry that would escape the data root: {entry.FullName}. Nothing further was restored.");
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            entry.ExtractToFile(target, overwrite: true);
+            if (expected.TryGetValue(entry.FullName, out var hash))
+            {
+                await using var stream = File.OpenRead(target);
+                var actual = Convert.ToHexString(await SHA256.HashDataAsync(stream, ct)).ToLowerInvariant();
+                if (!string.Equals(actual, hash, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new RestoreException($"Attachment {entry.FullName} does not hash to what the backup recorded.");
+                }
+            }
+
+            count++;
+        }
+
+        return count;
     }
 
     // ── Verification ─────────────────────────────────────────────────────────
@@ -167,50 +297,6 @@ public sealed class RestoreEngine : IRestoreEngine
         return await JsonSerializer.DeserializeAsync<BackupManifest>(stream, cancellationToken: ct)
                ?? throw new RestoreException($"The backup manifest at {manifestPath} is empty.");
     }
-
-    /// <summary>
-    /// Checks every file the manifest declares, by hash.
-    ///
-    /// A backup lives on removable media and is read months after it was written, which is
-    /// exactly where silent corruption and truncated copies happen. Verifying before the safety
-    /// backup means a bad package costs nothing.
-    /// </summary>
-    private static async Task VerifyPackageAsync(string backupPath, BackupManifest manifest, CancellationToken ct)
-    {
-        var failures = new List<string>();
-
-        foreach (var entry in manifest.Files)
-        {
-            var path = Path.Combine(backupPath, entry.RelativePath);
-            if (!File.Exists(path))
-            {
-                failures.Add($"{entry.RelativePath} is missing");
-                continue;
-            }
-
-            if (string.IsNullOrWhiteSpace(entry.Sha256))
-            {
-                continue;
-            }
-
-            await using var stream = File.OpenRead(path);
-            var actual = Convert.ToHexString(await SHA256.HashDataAsync(stream, ct)).ToLowerInvariant();
-
-            if (!string.Equals(actual, entry.Sha256, StringComparison.OrdinalIgnoreCase))
-            {
-                failures.Add($"{entry.RelativePath} does not match its recorded hash");
-            }
-        }
-
-        if (failures.Count > 0)
-        {
-            throw new RestoreException(
-                $"The backup at {backupPath} failed verification and will not be restored: {string.Join("; ", failures)}. " +
-                "Nothing has been changed.");
-        }
-    }
-
-    // ── The restore itself ───────────────────────────────────────────────────
 
     private async Task RestoreDumpAsync(string dumpPath, CancellationToken ct)
     {

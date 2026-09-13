@@ -53,4 +53,10 @@ public interface ISecretStore
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>List of secret key identifiers.</returns>
     Task<IReadOnlyList<string>> ListKeysAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Raw key material by name — generated on first use, <paramref name="bytes"/> long, stored
+    /// in the encrypted store. For key-encryption keys (the backup KEK), not for passwords.
+    /// </summary>
+    Task<byte[]> GetOrCreateKeyAsync(string name, int bytes, CancellationToken cancellationToken = default);
 }

@@ -238,7 +238,7 @@ Worth stating positively, because refusing is most of what an installer should b
 | Payload fails signature or hash | 2, before anything is touched | The only tamper-evidence in force (ADR-0001) |
 | Any blocking precheck | 1, before anything is touched | A half-installed node is worse than none |
 | Malformed service map | 2, before anything is touched | Loaded ahead of the first mutation on purpose |
-| Mode with no engine | 4 | Never 0 — see defect 3 above. **Upgrade, Restore and Repair all left this list on 2026-08-29**; only Backup remains |
+| Mode with no engine | 4 | Never 0 — see defect 3 above. **Upgrade, Restore and Repair left this list on 2026-08-29; Backup on 2026-09-13.** The list is now the platform engines a build lacks (Windows ACL/firewall/accounts), by name |
 | Repair against a medium carrying a different version | 2, before anything | Changing version is an upgrade, and doing it as "repair" would skip the backup and the migrations |
 | Repair that needs to regenerate config with no `.epcfg` | 2 | Leaving broken configuration in place and reporting success is worse than not running |
 | Upgrade whose pre-upgrade backup does not verify | 2, before staging | A backup that cannot be read is not a way back |
@@ -388,14 +388,14 @@ and the claim has to be updated with it — which is the point.
 - [~] 15. Implement Backup Engine
   - [x] 15.1 `IBackupEngine` + `BackupManifest` model
   - [x] 15.2 MySQL logical backup — **DONE 2026-08-29.** Real `mysqldump` via `IProcessRunner`, with `--single-transaction` (a consistent snapshot without stopping the counter), `--routines --triggers --events` (all three omitted by default — a restore missing them succeeds and the estate's stored logic is silently gone), `--set-gtid-purged=OFF` and `--hex-blob`. **Then it proves the dump is whole**: mysqldump can exit 0 having written a truncated file — a full disk is the usual way — and a truncated dump restores cleanly up to the point it stops. The completion marker is checked, so `rc=0` is not the verdict here either. Password via `MYSQL_PWD`, never the command line.
-  - [ ] 15.3 Attachment backup (tar + per-file SHA-256) — TODO at `BackupEngine.cs:307`
+  - [x] 15.3 Attachment backup — **Done 2026-09-13:** `attachments.zip` (attachments/ and files/) with a per-file SHA-256 manifest; restore extracts and checks each file, and refuses an entry that would escape the data root. *Was:* a listing of the first 100 file names.
   - [x] 15.4 Config backup — real file copy. *Keys backup copies metadata only.*
   - [ ] 15.5 Sync state export — placeholder JSON at `BackupEngine.cs:300`
-  - [ ] 15.6 Backup encryption (AES-256-GCM) — **no code.**
-  - [ ] 15.7 Backup manifest signing — `ManifestSigned = false // TODO`
+  - [x] 15.6 Backup encryption — **Done 2026-09-13:** every file AES-256-GCM in 4 MB chunks under a fresh per-backup data key (`BackupRestore/Crypto/BackupCrypto`); the data key wrapped to the node's KEK (secret store) and, when `Backup:Encryption:RecoveryPublicKeyPath` is set, RSA-OAEP to the state's recovery key. The manifest states which - never assumed. The secret store's key is now a real random `keys/master.key` (0600), not SHA-256 of the hostname; backups deliberately exclude it.
+  - [x] 15.7 Backup manifest MAC — **Done 2026-09-13:** HMAC-SHA256 under the KEK over the exact manifest bytes (`backup-manifest.json.mac`), named as a MAC in the manifest because a node holds no signing certificate.
   - [x] 15.8 Backup target validation (exists, writable, space) — real
-  - [ ] 15.9 Backup verification — `ManifestSignatureValid = false`, `DumpReadable = true` are hardcoded
-  - [ ] 15.10 Unit tests
+  - [x] 15.9 Backup verification — **Done 2026-09-13:** ciphertext hashes without the key; the MAC; then the dump decrypted to a root-only temp file, hashed against the manifest, and checked for the mysqldump header and the `Dump completed` marker. `--mode backup` takes a package and then verifies it by reading it back; one that does not verify is reported as NOT a way back (exit 2). **Backup has left the exit-4 list.**
+  - [x] 15.10 Unit tests — 10 `BackupCryptoTests` + 12 `BackupRestoreEngineTests` (2026-09-13), end to end with a real secret store and a fake mysqldump/mysql.
 
 - [~] 16. Implement Restore Engine — **DONE 2026-08-29** except encryption. `BackupRestore/Restore/RestoreEngine`.
   - [x] 16.2 Package verification by hash before anything is touched — a backup lives on removable media and is read months later, which is exactly where truncation and bit-rot happen. Verifying first means a bad package costs nothing.
@@ -404,7 +404,7 @@ and the claim has to be updated with it — which is the point.
   - [x] 16.5 Attachment and 16.6 config restore.
   - [x] **Refuses a placeholder dump.** Backups taken before 2026-08-29 contain `-- MySQL dump placeholder`; restoring one would silently produce an empty database, so the head of the file is checked.
   - [x] 16.7 `RequiresReconciliation` is **always true** after a restore: the node's outbox is back to what it was when the backup was taken, so anything sent since is a gap the central side has and this node no longer knows it sent.
-  - [ ] Encryption/decryption of the package (15.6 is still open, so there is nothing to decrypt yet).
+  - [x] Encryption/decryption of the package — restore verifies the package as it sits, decrypts into root-only staging checking every plaintext hash, restores from there, and deletes the staging copy (2026-09-13).
   - [x] 16.8 Tests.
 
 - [~] 17. Implement Upgrade Engine — **DONE 2026-08-29** except the migration runner itself.

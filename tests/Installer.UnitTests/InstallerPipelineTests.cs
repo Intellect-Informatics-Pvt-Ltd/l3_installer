@@ -1,6 +1,8 @@
 using Installer.Actions.Health;
 using Installer.Actions.Platform;
 using SharedKernel.Security;
+using BackupRestore.Backup;
+using BackupRestore.Models;
 using FluentAssertions;
 using Installer.Actions.Database;
 using Installer.Core.Upgrade;
@@ -48,6 +50,7 @@ public sealed class InstallerPipelineTests : IDisposable
     private readonly Mock<IAclEngine> _acl = new();
     private readonly Mock<IFirewallManager> _firewall = new();
     private readonly Mock<IHealthAggregator> _health = new();
+    private readonly Mock<IBackupEngine> _backup = new();
     private ComponentsOptions _componentsOptions = new();
     private readonly List<IPrecheck> _prechecks = [];
 
@@ -89,7 +92,7 @@ public sealed class InstallerPipelineTests : IDisposable
             _repair.Object,
             _siteTokens,
             _payloadConfig.Object,
-            _accounts.Object, _acl.Object, _firewall.Object, _health.Object,
+            _accounts.Object, _acl.Object, _firewall.Object, _health.Object, _backup.Object,
             opts,
             Microsoft.Extensions.Options.Options.Create(_componentsOptions),
             NullLogger<InstallerPipeline>.Instance);
@@ -171,13 +174,51 @@ public sealed class InstallerPipelineTests : IDisposable
     }
 
     [Fact]
-    public async Task Backup_says_plainly_that_it_would_restore_nothing()
+    public async Task Backup_takes_a_package_and_then_verifies_it_by_reading_it_back()
     {
-        var result = await Build().RunAsync(new PipelineRequest { Mode = InstallerMode.Backup, SiteConfig = Site });
+        // 15.6/15.7/15.9: Backup leaves the exit-4 list. A backup that was written and cannot be
+        // read back is a failure, not a success with a caveat.
+        var manifest = BackupManifestFor("BAK-1", Path.Combine(_dataRoot, "backups", "BAK-1"));
+        _backup.Setup(b => b.CreateBackupAsync(BackupType.Manual, It.IsAny<Action<string, int>?>(), It.IsAny<CancellationToken>())).ReturnsAsync(manifest);
+        _backup.Setup(b => b.VerifyBackupAsync(manifest.PackagePath!, It.IsAny<CancellationToken>()))
+               .ReturnsAsync(new BackupVerificationResult { Valid = true, ChecksumVerified = true, ManifestSignatureValid = true, DumpReadable = true });
 
-        result.Outcome.Should().Be(PipelineOutcome.NotImplemented);
-        result.Message.Should().Contain("placeholder", "an operator must not believe they hold a usable backup");
+        var result = await Build().RunAsync(new PipelineRequest { Mode = InstallerMode.Backup, SiteConfig = Site, DryRun = false });
+
+        result.Outcome.Should().Be(PipelineOutcome.Success);
+        result.Message.Should().Contain("BAK-1").And.Contain("verified");
+        result.Steps.Should().Contain(s => s.Contains("decrypts and is complete"));
     }
+
+    [Fact]
+    public async Task A_backup_that_does_not_verify_is_reported_as_no_way_back()
+    {
+        var manifest = BackupManifestFor("BAK-2", Path.Combine(_dataRoot, "backups", "BAK-2"));
+        _backup.Setup(b => b.CreateBackupAsync(BackupType.Manual, It.IsAny<Action<string, int>?>(), It.IsAny<CancellationToken>())).ReturnsAsync(manifest);
+        _backup.Setup(b => b.VerifyBackupAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+               .ReturnsAsync(new BackupVerificationResult { Valid = false, Errors = ["Checksum mismatch: db/mysql-dump.sql.enc"] });
+
+        var result = await Build().RunAsync(new PipelineRequest { Mode = InstallerMode.Backup, SiteConfig = Site, DryRun = false });
+
+        result.Outcome.Should().Be(PipelineOutcome.OperationFailed);
+        result.Message.Should().Contain("does not verify").And.Contain("Checksum mismatch").And.Contain("NOT a way back");
+    }
+
+    [Fact]
+    public async Task Backup_dry_run_takes_nothing()
+    {
+        var result = await Build().RunAsync(new PipelineRequest { Mode = InstallerMode.Backup, SiteConfig = Site, DryRun = true });
+
+        result.Outcome.Should().Be(PipelineOutcome.Success, result.Message);
+        _backup.Verify(b => b.CreateBackupAsync(It.IsAny<BackupType>(), It.IsAny<Action<string, int>?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    private static BackupManifest BackupManifestFor(string id, string path) => new()
+    {
+        BackupId = id, PacsId = "AP-1", CreatedAtUtc = DateTimeOffset.UnixEpoch, CreatedBy = "t", BackupType = BackupType.Manual,
+        StackVersion = "3.3.0", SchemaVersion = 25, Encryption = "AES-256-GCM", KeyProtection = "local-kek-only",
+        Includes = new BackupIncludes(), Validation = new BackupValidation(), PackagePath = path
+    };
 
     // ── Refusals ─────────────────────────────────────────────────────────────
 
