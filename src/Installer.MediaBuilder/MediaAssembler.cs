@@ -29,7 +29,14 @@ public sealed class MediaAssembler
 {
     private readonly TextWriter _out;
 
-    public MediaAssembler(TextWriter output) => _out = output;
+    private readonly IReadOnlyList<System.Text.RegularExpressions.Regex> _allow;
+
+    /// <param name="allow">Key paths the secret gate must not flag (regex over the JSON pointer, as config-hygiene's --allow).</param>
+    public MediaAssembler(TextWriter output, IEnumerable<string>? allow = null)
+    {
+        _out = output;
+        _allow = (allow ?? []).Select(a => new System.Text.RegularExpressions.Regex(a, System.Text.RegularExpressions.RegexOptions.IgnoreCase)).ToList();
+    }
 
     public async Task<MediaBuildResult> BuildAsync(
         MediaSpec spec,
@@ -163,6 +170,15 @@ public sealed class MediaAssembler
         var source = Path.GetFullPath(Path.Combine(specDir, payload.Source));
         string fileName;
         string destination;
+
+        // The secret gate, before a byte is staged: a credential in a payload is a credential on
+        // every node and in every support bundle. Refused with the file and key named, the
+        // value masked - see SecretGate for why the rules are the estate's own.
+        var secrets = SecretGate.Scan(source, _allow);
+        if (secrets.Count > 0)
+        {
+            throw new SecretGateException(payload.Name, secrets);
+        }
 
         if (Directory.Exists(source))
         {
@@ -335,7 +351,7 @@ public sealed record MediaBuildResult
     public required bool IsSigned { get; init; }
 }
 
-public sealed class MediaBuildException : Exception
+public class MediaBuildException : Exception
 {
     public MediaBuildException(string message) : base(message) { }
     public MediaBuildException(string message, Exception inner) : base(message, inner) { }

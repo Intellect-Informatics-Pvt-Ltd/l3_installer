@@ -39,6 +39,7 @@ public sealed class RepairEngine : IRepairEngine
     private readonly IBinaryDeployer _binaries;
     private readonly IConfigGenerator _configGenerator;
     private readonly IServiceOrchestrator _services;
+    private readonly IPayloadConfigRewriter _payloadConfig;
     private readonly ISiteConfigLoader _siteConfigLoader;
     private readonly ISiteTokenSource _siteTokens;
     private readonly IOptions<InstallerOptions> _options;
@@ -52,6 +53,7 @@ public sealed class RepairEngine : IRepairEngine
         IBinaryDeployer binaries,
         IConfigGenerator configGenerator,
         IServiceOrchestrator services,
+        IPayloadConfigRewriter payloadConfig,
         ISiteConfigLoader siteConfigLoader,
         ISiteTokenSource siteTokens,
         IOptions<InstallerOptions> options,
@@ -59,6 +61,7 @@ public sealed class RepairEngine : IRepairEngine
         ILogger<RepairEngine> logger)
     {
         _siteConfigLoader = siteConfigLoader;
+        _payloadConfig = payloadConfig;
         _siteTokens = siteTokens;
         _manifestVerifier = manifestVerifier;
         _serviceMapLoader = serviceMapLoader;
@@ -213,6 +216,19 @@ public sealed class RepairEngine : IRepairEngine
                 cancellationToken);
 
             repaired.Add($"Regenerated {generated.GeneratedFiles.Count} configuration file(s).");
+        }
+
+        if (binariesNeedRelaying || request.RegenerateConfiguration || configMissing)
+        {
+            // Re-laid binaries carry the committed appsettings.json - the dev-server defaults -
+            // so the node's facts must go back into them before anything starts (G26).
+            var rewrite = await _payloadConfig.RewriteAsync(
+                Path.Combine(releasePath, "services"),
+                Path.Combine(configDir, "appsettings.Site.json"),
+                Path.Combine(mediaDir, "config", PayloadConfigRewriter.SiblingUrlsFileName),
+                services,
+                cancellationToken);
+            repaired.Add($"Rewrote {rewrite.Rewritten.Count} service configuration(s) for this node.");
         }
 
         // Unconditional, because it is idempotent and cheap, and because a service whose binary

@@ -47,6 +47,7 @@ public sealed class InstallerPipeline : IInstallerPipeline
     private readonly IRestoreEngine _restore;
     private readonly IRepairEngine _repair;
     private readonly ISiteTokenSource _siteTokens;
+    private readonly IPayloadConfigRewriter _payloadConfig;
     private readonly IOptions<InstallerOptions> _options;
     private readonly IOptions<ComponentsOptions> _components;
     private readonly ILogger<InstallerPipeline> _logger;
@@ -77,6 +78,7 @@ public sealed class InstallerPipeline : IInstallerPipeline
         IRestoreEngine restore,
         IRepairEngine repair,
         ISiteTokenSource siteTokens,
+        IPayloadConfigRewriter payloadConfig,
         IOptions<InstallerOptions> options,
         IOptions<ComponentsOptions> components,
         ILogger<InstallerPipeline> logger)
@@ -98,6 +100,7 @@ public sealed class InstallerPipeline : IInstallerPipeline
         _restore = restore;
         _repair = repair;
         _siteTokens = siteTokens;
+        _payloadConfig = payloadConfig;
         _options = options;
         _components = components;
         _logger = logger;
@@ -349,6 +352,19 @@ public sealed class InstallerPipeline : IInstallerPipeline
         var baselineDdl = Path.Combine(mediaDir, "db", "stable_baseline_ddl.sql");
         var dbResult = await _database.ExecuteAsync(baselineDdl, ct);
         steps.AddRange(dbResult.Steps.Select(x => $"database: {x}"));
+
+        // The node's facts go INTO each service's own appsettings.json - after the database
+        // bootstrap, because the application password now exists, and before registration,
+        // because a service must never start against the committed dev-server defaults (G26).
+        await _stateMachine.TransitionAsync(InstallerPhase.Install, "service-config", cancellationToken: ct);
+        var rewrite = await _payloadConfig.RewriteAsync(
+            Path.Combine(_binaries.ResolveCurrent() ?? Path.Combine(opts.ReleasesPath, manifest.Manifest.StackVersion), "services"),
+            Path.Combine(opts.DataRoot, "config", "appsettings.Site.json"),
+            Path.Combine(mediaDir, "config", PayloadConfigRewriter.SiblingUrlsFileName),
+            services,
+            ct);
+        steps.Add($"Rewrote {rewrite.Rewritten.Count} service configuration(s) for this node" +
+                  (rewrite.PasswordWritten ? " with the database credential." : "."));
 
         await _stateMachine.TransitionAsync(InstallerPhase.Install, "services", cancellationToken: ct);
         await _services.RegisterAllAsync(services, ct);

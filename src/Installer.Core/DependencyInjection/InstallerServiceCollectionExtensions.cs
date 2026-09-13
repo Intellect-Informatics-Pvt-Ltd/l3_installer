@@ -135,6 +135,9 @@ public static class InstallerServiceCollectionExtensions
         // Bound by whichever engine loads the .epcfg; read by the orchestrators so
         // ${epcfg:state_code} resolves in a unit file as it does in a template.
         services.AddSingleton<ISiteTokenSource, SiteTokenSource>();
+        // Writes the node's facts into each deployed service's own appsettings.json - the only
+        // place every code path in the estate reads (ADR-0002 adoption is partial; G26).
+        services.AddSingleton<IPayloadConfigRewriter, PayloadConfigRewriter>();
         // PLATFORM SELECTION — ADR-0010.
         //
         // The only place in the product that branches on the operating system. Everything above

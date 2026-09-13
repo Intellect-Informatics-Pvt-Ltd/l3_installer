@@ -30,6 +30,13 @@ public static class Program
                 _ => Fail($"unknown command '{args[0]}'")
             };
         }
+        catch (SecretGateException ex)
+        {
+            // Distinct from a build error so a pipeline can tell "the payload is not fit to ship"
+            // from "the build broke". The message names file and key; the value is masked.
+            Console.Error.WriteLine($"refused: {ex.Message}");
+            return 3;
+        }
         catch (MediaBuildException ex)
         {
             Console.Error.WriteLine($"error: {ex.Message}");
@@ -80,7 +87,7 @@ public static class Program
         MediaBuildResult result;
         try
         {
-            result = await new MediaAssembler(Console.Out).BuildAsync(spec, output, groups, signer);
+            result = await new MediaAssembler(Console.Out, Args(args, "--allow")).BuildAsync(spec, output, groups, signer);
         }
         finally
         {
@@ -144,6 +151,21 @@ public static class Program
     private static X509KeyStorageFlags KeyStorageFlags =>
         OperatingSystem.IsMacOS() ? X509KeyStorageFlags.DefaultKeySet : X509KeyStorageFlags.EphemeralKeySet;
 
+    /// <summary>Every value of a repeatable flag, in order.</summary>
+    private static List<string> Args(string[] args, string name)
+    {
+        var values = new List<string>();
+        for (var i = 0; i + 1 < args.Length; i++)
+        {
+            if (args[i] == name)
+            {
+                values.Add(args[++i]);
+            }
+        }
+
+        return values;
+    }
+
     private static string? Arg(string[] args, string name)
     {
         var i = Array.IndexOf(args, name);
@@ -174,6 +196,11 @@ public static class Program
           --pfx         PKCS#12 with the signing key. Password from EPACS_PFX_PASSWORD.
           --unsigned    Build without a signature. Development only; exits 2 to make it hard to
                         mistake an unsigned medium for a releasable one in a pipeline.
+          --allow       A regex over a JSON key path the SECRET GATE must not flag (repeatable).
+                        The gate refuses any payload whose appsettings*.json carries a credential,
+                        by the same rules as build/config-hygiene.py in the L2-R2 workspace; a
+                        fixture value that is genuinely not a secret is allowed here, by path,
+                        never by switching the gate off.
 
         verify
           --media       An assembled medium. Runs the INSTALLER'S OWN verifier, so a pass here
@@ -186,6 +213,7 @@ public static class Program
           0   verified
           1   failed
           2   built but UNSIGNED — not releasable
+          3   REFUSED — a payload carries a credential (file and key named, value masked)
           64  usage
           99  unexpected
         """;

@@ -55,14 +55,17 @@ public sealed class RepairEngineTests : IDisposable
                                               It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<CancellationToken>()))
                .ReturnsAsync(new ConfigGenerationResult { GeneratedFiles = ["appsettings.json"], TokensResolved = 3 });
         _binaries.Setup(b => b.ResolveCurrent()).Returns(Path.Combine(_root, "bin", "releases", "3.3.0"));
+        _payloadConfig.Setup(p => p.RewriteAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<CancellationToken>()))
+                      .ReturnsAsync(new PayloadConfigResult { Rewritten = new Dictionary<string, int>(), Skipped = [] });
     }
 
     private readonly Mock<ISiteConfigLoader> _siteLoader = new();
+    private readonly Mock<IPayloadConfigRewriter> _payloadConfig = new();
     private readonly SiteTokenSource _siteTokens = new();
 
     private RepairEngine Build() => new(
         _verifier.Object, _serviceMap.Object, _payloads.Object, _binaries.Object,
-        _config.Object, _services.Object,
+        _config.Object, _services.Object, _payloadConfig.Object,
         _siteLoader.Object, _siteTokens,
         Options.Create(Opts), Options.Create(new ComponentsOptions()),
         NullLogger<RepairEngine>.Instance);

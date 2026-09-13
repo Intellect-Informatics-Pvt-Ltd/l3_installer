@@ -558,21 +558,21 @@ and the claim has to be updated with it — which is the point.
   `ops/l2r2 bootstrap clone` and from `Intellect.L2R2.sln`, so it is not part of the estate's
   build or CI.
 
-- [ ] **X7. One generated topology (G25, decision D1).** `build/generate-topology.py` in L2-R2
+- [x] **X7. One generated topology (G25, decision D1).** *Done 2026-09-13; 12 contract tests here, 12 in the workspace, `--check` a module guard.* `build/generate-topology.py` in L2-R2
   reads each module's `appsettings.json` and `ops/ansible/group_vars/all.yml` — the sources
   `generate-compose.py` already reads, including its stray-root `.csproj`/`appsettings` traps —
   and emits `topology/service-map.l2r2.yaml` plus `topology/appsettings.Applications.json` for
   all 27 services. `--check` fails CI on a stale file. A contract test here loads the generated
   map and asserts 27 entries with the start orders `group_vars` declares.
 
-- [ ] **X8. Re-point sibling URLs (G26).** `ConfigGenerator` rewrites every `APIKeys`/`ERPKeys`
+- [x] **X8. Re-point sibling URLs (G26).** *Done 2026-09-13 as `PayloadConfigRewriter`: the node's facts go INTO each deployed service's own appsettings.json - overlay, sibling URLs from the generated table, and the application database password (measured: FAS 24 and Loans 47 raw `ConfigurationBuilder` sites do not read the environment, so the file is the only place every path reads). Runs in install, repair and upgrade. Contract test against the real FAS/ERPClient/Loans files: zero dev-server addresses survive.* `ConfigGenerator` rewrites every `APIKeys`/`ERPKeys`
   URL whose port belongs to a service in the map to `127.0.0.1:<port>`, leaves genuinely
   external hosts (eKYC, WebLand, the SMS gateway) untouched, strips `Iam:Authority` in the
   offline profile, and writes the result into the file. Contract test: the generated
   `appsettings.Site.json` for the 27 services equals compose's `api_key_overrides` result for
   the same inputs.
 
-- [ ] **X9. The secret gate (G27, 28.5).** `epacs-media build` refuses a payload carrying a
+- [x] **X9. The secret gate (G27, 28.5).** *Done 2026-09-13: `SecretGate` in the media builder, exit 3, rules byte-equal to `config-hygiene.py` (a test reads the Python and asserts it). A second test documents that ERPClient on `r2-dev-stable` is still refused - it flips when TD-123 is rotated.* `epacs-media build` refuses a payload carrying a
   secret — exit 2 naming the file and key, value masked — using the key pattern and allow-list
   from `build/config-hygiene.py`. A test reads both and asserts they are equal, so the two
   cannot drift. The publish script runs `config-hygiene.py redact` first.

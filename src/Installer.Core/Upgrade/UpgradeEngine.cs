@@ -52,6 +52,7 @@ public sealed class UpgradeEngine : IUpgradeEngine
     private readonly IBinaryDeployer _binaries;
     private readonly IServiceOrchestrator _services;
     private readonly IServiceMapLoaderAdapter _serviceMap;
+    private readonly IPayloadConfigRewriter _payloadConfig;
     private readonly IOptions<InstallerOptions> _options;
     private readonly IOptions<ServicesOptions> _servicesOptions;
     private readonly ILogger<UpgradeEngine> _logger;
@@ -65,10 +66,12 @@ public sealed class UpgradeEngine : IUpgradeEngine
         IBinaryDeployer binaries,
         IServiceOrchestrator services,
         IServiceMapLoaderAdapter serviceMap,
+        IPayloadConfigRewriter payloadConfig,
         IOptions<InstallerOptions> options,
         IOptions<ServicesOptions> servicesOptions,
         ILogger<UpgradeEngine> logger)
     {
+        _payloadConfig = payloadConfig;
         _manifestVerifier = manifestVerifier;
         _backupEngine = backupEngine;
         _restoreEngine = restoreEngine;
@@ -153,9 +156,20 @@ public sealed class UpgradeEngine : IUpgradeEngine
             await _payloads.ExtractAllAsync(manifest, payloadDirectory, staging, cancellationToken: cancellationToken);
             await _binaries.StageAsync(staging, newVersion, cancellationToken);
 
+            // The staged release carries the committed appsettings.json - the dev-server
+            // defaults. The node's facts go into it BEFORE the switch, while the old release is
+            // still what 'current' points at, so an interrupted rewrite costs nothing (G26).
+            var services = await _serviceMap.LoadAsync(cancellationToken);
+            var rewrite = await _payloadConfig.RewriteAsync(
+                Path.Combine(_options.Value.ReleasesPath, newVersion, "services"),
+                Path.Combine(_options.Value.DataRoot, "config", "appsettings.Site.json"),
+                Path.Combine(payloadDirectory, "config", PayloadConfigRewriter.SiblingUrlsFileName),
+                services,
+                cancellationToken);
+            LogEvents.UpgradeConfigRewritten(_logger, newVersion, rewrite.Rewritten.Count);
+
             // ── 6. Stop ──────────────────────────────────────────────────────
             progress?.Invoke("Stopping services", 55);
-            var services = await _serviceMap.LoadAsync(cancellationToken);
             await _services.StopAllAsync(services, cancellationToken);
 
             // ── 7-8. Migrate, then commit ────────────────────────────────────

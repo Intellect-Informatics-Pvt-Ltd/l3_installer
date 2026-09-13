@@ -106,6 +106,10 @@ internal static partial class LogEvents
         Message = "Upgrade succeeded: {From} -> {To}. Pre-upgrade backup {BackupId} retained.")]
     public static partial void UpgradeSucceeded(ILogger logger, string from, string to, string backupId);
 
+    [LoggerMessage(EventId = 1078, Level = LogLevel.Information,
+        Message = "Staged release {Version}: {Count} service configuration(s) rewritten for this node before the switch.")]
+    public static partial void UpgradeConfigRewritten(ILogger logger, string version, int count);
+
     [LoggerMessage(EventId = 1072, Level = LogLevel.Error,
         Message = "Upgrade from {From} to {To} failed.")]
     public static partial void UpgradeFailed(ILogger logger, Exception exception, string from, string to);

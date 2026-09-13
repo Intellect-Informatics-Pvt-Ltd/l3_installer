@@ -40,6 +40,7 @@ public sealed class InstallerPipelineTests : IDisposable
     private readonly Mock<IRestoreEngine> _restore = new();
     private readonly Mock<IRepairEngine> _repair = new();
     private readonly SiteTokenSource _siteTokens = new();
+    private readonly Mock<IPayloadConfigRewriter> _payloadConfig = new();
     private ComponentsOptions _componentsOptions = new();
     private readonly List<IPrecheck> _prechecks = [];
 
@@ -49,6 +50,8 @@ public sealed class InstallerPipelineTests : IDisposable
 
     private InstallerPipeline Build()
     {
+        _payloadConfig.Setup(p => p.RewriteAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<CancellationToken>()))
+                      .ReturnsAsync(new PayloadConfigResult { Rewritten = new Dictionary<string, int>(), Skipped = [] });
         var opts = Microsoft.Extensions.Options.Options.Create(Options);
         return new InstallerPipeline(
             new InstallerStateMachineFactory(opts, NullLogger<InstallerStateMachine>.Instance),
@@ -68,6 +71,7 @@ public sealed class InstallerPipelineTests : IDisposable
             _restore.Object,
             _repair.Object,
             _siteTokens,
+            _payloadConfig.Object,
             opts,
             Microsoft.Extensions.Options.Options.Create(_componentsOptions),
             NullLogger<InstallerPipeline>.Instance);

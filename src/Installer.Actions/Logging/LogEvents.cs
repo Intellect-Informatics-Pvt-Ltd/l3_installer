@@ -193,4 +193,12 @@ internal static partial class LogEvents
     [LoggerMessage(EventId = 2106, Level = LogLevel.Warning,
         Message = "An interrupted switch pointed at {Target}, which no longer exists. Leaving current where it is: a complete older release beats no release at all.")]
     public static partial void SwitchIntentAbandoned(ILogger logger, string target);
+
+    [LoggerMessage(EventId = 2152, Level = LogLevel.Information,
+        Message = "Rewrote {Service}/appsettings.json for this node: {Count} value(s) set (site overlay, sibling URLs, database credential).")]
+    public static partial void PayloadConfigRewritten(ILogger logger, string service, int count);
+
+    [LoggerMessage(EventId = 2153, Level = LogLevel.Warning,
+        Message = "Rewrote {Count} service configuration(s) with NO database password: the secret store holds none. Expected only for a medium without a bootstrapped database (harness); on a PACS node every service would fail its first query.")]
+    public static partial void PayloadConfigNoPassword(ILogger logger, int count);
 }
