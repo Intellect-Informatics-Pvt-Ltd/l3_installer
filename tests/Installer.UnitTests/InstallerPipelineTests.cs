@@ -1,3 +1,5 @@
+using Installer.Actions.Platform;
+using SharedKernel.Security;
 using FluentAssertions;
 using Installer.Actions.Database;
 using Installer.Core.Upgrade;
@@ -41,6 +43,9 @@ public sealed class InstallerPipelineTests : IDisposable
     private readonly Mock<IRepairEngine> _repair = new();
     private readonly SiteTokenSource _siteTokens = new();
     private readonly Mock<IPayloadConfigRewriter> _payloadConfig = new();
+    private readonly Mock<IServiceAccountProvisioner> _accounts = new();
+    private readonly Mock<IAclEngine> _acl = new();
+    private readonly Mock<IFirewallManager> _firewall = new();
     private ComponentsOptions _componentsOptions = new();
     private readonly List<IPrecheck> _prechecks = [];
 
@@ -48,10 +53,18 @@ public sealed class InstallerPipelineTests : IDisposable
 
     private InstallerOptions Options => new() { DataRoot = _dataRoot, BinaryRoot = Path.Combine(_dataRoot, "bin"), SiteConfigPath = _siteConfigPath };
 
-    private InstallerPipeline Build()
+    public InstallerPipelineTests()
     {
+        _accounts.Setup(a => a.EnsureAsync(It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        _acl.Setup(a => a.GenerateRules(It.IsAny<IReadOnlyList<ServiceMapEntry>>())).Returns([]);
+        _acl.Setup(a => a.VerifyAsync(It.IsAny<IReadOnlyList<AclRule>>(), It.IsAny<CancellationToken>())).ReturnsAsync(new AclVerificationResult { Valid = true });
+        _firewall.Setup(f => f.GenerateRules()).Returns([]);
         _payloadConfig.Setup(p => p.RewriteAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<CancellationToken>()))
                       .ReturnsAsync(new PayloadConfigResult { Rewritten = new Dictionary<string, int>(), Skipped = [] });
+    }
+
+    private InstallerPipeline Build()
+    {
         var opts = Microsoft.Extensions.Options.Options.Create(Options);
         return new InstallerPipeline(
             new InstallerStateMachineFactory(opts, NullLogger<InstallerStateMachine>.Instance),
@@ -65,13 +78,14 @@ public sealed class InstallerPipelineTests : IDisposable
             _binaries.Object,
             _config.Object,
             _services.Object,
-            new UninstallAction(_services.Object, _tokens.Object, opts, NullLogger<UninstallAction>.Instance),
+            new UninstallAction(_services.Object, _tokens.Object, _firewall.Object, opts, NullLogger<UninstallAction>.Instance),
             _database.Object,
             _upgrade.Object,
             _restore.Object,
             _repair.Object,
             _siteTokens,
             _payloadConfig.Object,
+            _accounts.Object, _acl.Object, _firewall.Object,
             opts,
             Microsoft.Extensions.Options.Options.Create(_componentsOptions),
             NullLogger<InstallerPipeline>.Instance);
@@ -377,5 +391,52 @@ public sealed class InstallerPipelineTests : IDisposable
         File.Exists(kept).Should().BeTrue();
         File.ReadAllText(kept).Should().Be(File.ReadAllText(epcfg), "the kept copy is the signed original, byte for byte");
         result.Steps.Should().Contain(s => s.Contains("site pack", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task The_least_privilege_boundary_is_laid_before_a_service_is_registered()
+    {
+        GivenVerificationSucceeds();
+        GivenConfigGenerates();
+        GivenDatabaseCanBootstrap();
+        GivenDatabaseExecutes();
+        GivenTopology(2);
+        var order = new List<string>();
+        _accounts.Setup(a => a.EnsureAsync(It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<CancellationToken>()))
+                 .Callback(() => order.Add("accounts")).ReturnsAsync(["l2r2"]);
+        _acl.Setup(a => a.GenerateRules(It.IsAny<IReadOnlyList<ServiceMapEntry>>())).Returns([new AclRule { Path = "/d", Account = "l2r2", Permission = AclAccessLevel.ReadWrite }]);
+        _acl.Setup(a => a.ApplyRulesAsync(It.IsAny<IReadOnlyList<AclRule>>(), It.IsAny<CancellationToken>()))
+            .Callback(() => order.Add("acl")).Returns(Task.CompletedTask);
+        _firewall.Setup(f => f.GenerateRules()).Returns([new FirewallRule { Name = "MySQL", Direction = FirewallDirection.Inbound, Action = FirewallAction.Allow, Port = 3306, LocalAddress = "127.0.0.1" }]);
+        _firewall.Setup(f => f.ApplyRulesAsync(It.IsAny<IReadOnlyList<FirewallRule>>(), It.IsAny<CancellationToken>()))
+                 .Callback(() => order.Add("firewall")).Returns(Task.CompletedTask);
+        _services.Setup(s => s.RegisterAllAsync(It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<CancellationToken>()))
+                 .Callback(() => order.Add("register")).Returns(Task.CompletedTask);
+
+        var result = await Build().RunAsync(new PipelineRequest { Mode = InstallerMode.Install, SiteConfig = Site, DryRun = false });
+
+        result.Outcome.Should().Be(PipelineOutcome.Success);
+        order.Should().ContainInOrder("accounts", "acl", "firewall", "register");
+        result.Steps.Should().Contain(s => s.Contains("l2r2")).And.Contain(s => s.Contains("1 ownership")).And.Contain(s => s.Contains("1 firewall"));
+    }
+
+    [Fact]
+    public async Task An_engine_this_platform_does_not_have_exits_NotImplemented_by_name_never_success()
+    {
+        // Windows today: the ACL/firewall/account engines refuse at use (tasks.md 25, 26, X1).
+        GivenVerificationSucceeds();
+        GivenConfigGenerates();
+        GivenDatabaseCanBootstrap();
+        GivenDatabaseExecutes();
+        GivenTopology(1);
+        _accounts.Setup(a => a.EnsureAsync(It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<CancellationToken>()))
+                 .ThrowsAsync(new PlatformNotSupportedException("The service-account provisioner is not built for Windows (tasks.md X1)."));
+
+        var result = await Build().RunAsync(new PipelineRequest { Mode = InstallerMode.Install, SiteConfig = Site, DryRun = false });
+
+        result.Outcome.Should().Be(PipelineOutcome.NotImplemented);
+        result.Message.Should().Contain("tasks.md X1");
+        _services.Verify(s => s.RegisterAllAsync(It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<CancellationToken>()), Times.Never,
+            "services are never registered on a node with no least-privilege boundary");
     }
 }

@@ -53,7 +53,9 @@ public enum RepairArea
     Binaries,
     Configuration,
     Services,
-    CurrentLink
+    CurrentLink,
+    /// <summary>Ownership, permissions and the firewall - the least-privilege boundary (18.4).</summary>
+    Permissions
 }
 
 public enum RepairSeverity

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Configuration;
 using SharedKernel.Contracts;
+using SharedKernel.Security;
 
 namespace Installer.Actions.Uninstall;
 
@@ -19,17 +20,20 @@ public sealed class UninstallAction
 {
     private readonly IServiceOrchestrator _serviceOrchestrator;
     private readonly IOverrideTokenValidator _tokenValidator;
+    private readonly IFirewallManager _firewall;
     private readonly IOptions<InstallerOptions> _options;
     private readonly ILogger<UninstallAction> _logger;
 
     public UninstallAction(
         IServiceOrchestrator serviceOrchestrator,
         IOverrideTokenValidator tokenValidator,
+        IFirewallManager firewall,
         IOptions<InstallerOptions> options,
         ILogger<UninstallAction> logger)
     {
         _serviceOrchestrator = serviceOrchestrator;
         _tokenValidator = tokenValidator;
+        _firewall = firewall;
         _options = options;
         _logger = logger;
     }
@@ -61,6 +65,9 @@ public sealed class UninstallAction
         // Step 2: Deregister all services
         _logger.LogInformation("Deregistering all ePACS Windows services...");
         await _serviceOrchestrator.DeregisterAllAsync(services, cancellationToken);
+
+        // Step 2b: Our firewall table - ours alone; a site's own rules are never touched.
+        await _firewall.RemoveAllRulesAsync(cancellationToken);
 
         // Step 3: Remove binaries
         LogEvents.RemovingBinaries(_logger, binaryRoot);

@@ -201,4 +201,20 @@ internal static partial class LogEvents
     [LoggerMessage(EventId = 2153, Level = LogLevel.Warning,
         Message = "Rewrote {Count} service configuration(s) with NO database password: the secret store holds none. Expected only for a medium without a bootstrapped database (harness); on a PACS node every service would fail its first query.")]
     public static partial void PayloadConfigNoPassword(ILogger logger, int count);
+
+    // Platform engines (Linux): 2160-2169
+    [LoggerMessage(EventId = 2160, Level = LogLevel.Information, Message = "ACL applied: {Path} -> {Account} ({Permission}).")]
+    public static partial void AclApplied(ILogger logger, string path, string account, SharedKernel.Security.AclAccessLevel permission);
+
+    [LoggerMessage(EventId = 2161, Level = LogLevel.Information, Message = "Firewall: {Count} rule(s) loaded into table inet epacs from {Path}.")]
+    public static partial void FirewallApplied(ILogger logger, int count, string path);
+
+    [LoggerMessage(EventId = 2162, Level = LogLevel.Information, Message = "Firewall: table inet {Table} removed.")]
+    public static partial void FirewallRemoved(ILogger logger, string table);
+
+    [LoggerMessage(EventId = 2163, Level = LogLevel.Debug, Message = "Service account {Account} already exists.")]
+    public static partial void ServiceAccountPresent(ILogger logger, string account);
+
+    [LoggerMessage(EventId = 2164, Level = LogLevel.Information, Message = "Service account {Account} created (system account, no login shell, no home).")]
+    public static partial void ServiceAccountCreated(ILogger logger, string account);
 }

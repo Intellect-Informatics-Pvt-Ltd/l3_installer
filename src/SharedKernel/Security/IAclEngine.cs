@@ -24,10 +24,15 @@ public interface IAclEngine
     Task<AclVerificationResult> VerifyAsync(IReadOnlyList<AclRule> rules, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Generates ACL rules from service map and installer options.
+    /// Generates ACL rules from installer options alone: the fixed data-root layout.
     /// </summary>
-    /// <returns>List of ACL rules to apply.</returns>
     IReadOnlyList<AclRule> GenerateRules();
+
+    /// <summary>
+    /// The fixed layout plus every <c>data_directories</c> entry the topology declares, owned by
+    /// that service's account. This is the one install, repair and the agent's drift monitor use.
+    /// </summary>
+    IReadOnlyList<AclRule> GenerateRules(IReadOnlyList<SharedKernel.Contracts.ServiceMapEntry> services);
 }
 
 /// <summary>

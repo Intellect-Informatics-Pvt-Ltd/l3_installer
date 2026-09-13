@@ -1,5 +1,7 @@
 using Installer.Actions.Database;
 using Installer.Actions.Install;
+using Installer.Actions.Platform;
+using Installer.Actions.Platform.Linux;
 using Installer.Actions.Prechecks;
 using Installer.Actions.Topology;
 using Installer.Actions.Uninstall;
@@ -151,16 +153,28 @@ public static class InstallerServiceCollectionExtensions
         if (OperatingSystem.IsWindows())
         {
             services.AddSingleton<IServiceOrchestrator, ServiceOrchestrator>();
+            // NTFS ACLs, Windows Firewall and local accounts are not built (tasks.md 25, 26, X1).
+            // They refuse by name at use, so a Windows --apply exits 4 rather than registering
+            // services on a node with no least-privilege boundary at all.
+            services.AddSingleton<IAclEngine, NotYetBuiltAclEngine>();
+            services.AddSingleton<IFirewallManager, NotYetBuiltFirewallManager>();
+            services.AddSingleton<IServiceAccountProvisioner, NotYetBuiltServiceAccountProvisioner>();
         }
         else if (OperatingSystem.IsLinux())
         {
             services.AddSingleton<IServiceOrchestrator, SystemdServiceOrchestrator>();
+            services.AddSingleton<IAclEngine, LinuxAclEngine>();
+            services.AddSingleton<IFirewallManager, NftablesFirewallManager>();
+            services.AddSingleton<IServiceAccountProvisioner, SystemdServiceAccountProvisioner>();
         }
         else
         {
             // Throws when USED, not when resolved — so the graph still validates and a dry run
             // still works on a developer's machine. See the type's own remarks.
             services.AddSingleton<IServiceOrchestrator, UnsupportedPlatformServiceOrchestrator>();
+            services.AddSingleton<IAclEngine, NotYetBuiltAclEngine>();
+            services.AddSingleton<IFirewallManager, NotYetBuiltFirewallManager>();
+            services.AddSingleton<IServiceAccountProvisioner, NotYetBuiltServiceAccountProvisioner>();
         }
 
         // The database bootstrap - the reason the framework exists. ProcessRunner is the only

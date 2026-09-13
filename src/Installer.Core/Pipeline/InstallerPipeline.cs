@@ -1,5 +1,6 @@
 using Installer.Actions.Database;
 using Installer.Actions.Install;
+using Installer.Actions.Platform;
 using Installer.Actions.Prechecks;
 using Installer.Actions.Topology;
 using Installer.Actions.Uninstall;
@@ -12,6 +13,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Configuration;
 using SharedKernel.Contracts;
+using SharedKernel.Security;
 
 namespace Installer.Core.Pipeline;
 
@@ -48,6 +50,9 @@ public sealed class InstallerPipeline : IInstallerPipeline
     private readonly IRepairEngine _repair;
     private readonly ISiteTokenSource _siteTokens;
     private readonly IPayloadConfigRewriter _payloadConfig;
+    private readonly IServiceAccountProvisioner _accounts;
+    private readonly IAclEngine _acl;
+    private readonly IFirewallManager _firewall;
     private readonly IOptions<InstallerOptions> _options;
     private readonly IOptions<ComponentsOptions> _components;
     private readonly ILogger<InstallerPipeline> _logger;
@@ -79,6 +84,9 @@ public sealed class InstallerPipeline : IInstallerPipeline
         IRepairEngine repair,
         ISiteTokenSource siteTokens,
         IPayloadConfigRewriter payloadConfig,
+        IServiceAccountProvisioner accounts,
+        IAclEngine acl,
+        IFirewallManager firewall,
         IOptions<InstallerOptions> options,
         IOptions<ComponentsOptions> components,
         ILogger<InstallerPipeline> logger)
@@ -101,6 +109,9 @@ public sealed class InstallerPipeline : IInstallerPipeline
         _repair = repair;
         _siteTokens = siteTokens;
         _payloadConfig = payloadConfig;
+        _accounts = accounts;
+        _acl = acl;
+        _firewall = firewall;
         _options = options;
         _components = components;
         _logger = logger;
@@ -150,6 +161,15 @@ public sealed class InstallerPipeline : IInstallerPipeline
         catch (OperationCanceledException)
         {
             throw;
+        }
+        catch (PlatformNotSupportedException ex)
+        {
+            // An engine this build does not have for this platform. Exit 4, by name - never 0,
+            // and distinct from an operation that was attempted and failed.
+            LogEvents.PipelineFailed(_logger, ex, mode);
+            await SafeFailAsync("ERP-INST-NOT-BUILT", ex.Message, cancellationToken);
+            return PipelineResult.Failed(PipelineOutcome.NotImplemented, mode,
+                _stateMachine?.CurrentState.Phase ?? InstallerPhase.Load, ex.Message, steps);
         }
 #pragma warning disable CA1031 // The pipeline is the top of the stack: an unhandled exception
         catch (Exception ex) // here would lose the checkpoint and the operator's diagnosis alike.
@@ -365,6 +385,20 @@ public sealed class InstallerPipeline : IInstallerPipeline
             ct);
         steps.Add($"Rewrote {rewrite.Rewritten.Count} service configuration(s) for this node" +
                   (rewrite.PasswordWritten ? " with the database credential." : "."));
+
+        // The least-privilege boundary, before a service exists to be inside it: the accounts the
+        // map names, ownership of what each one writes and read-only on what it must not change,
+        // and a firewall that keeps the database off the LAN. On a platform whose engines are not
+        // built this is where the run exits 4 by name (tasks.md 25, 26, X1).
+        await _stateMachine.TransitionAsync(InstallerPhase.Install, "platform", cancellationToken: ct);
+        var created = await _accounts.EnsureAsync(services, ct);
+        steps.Add(created.Count == 0 ? "Service accounts present." : $"Created service account(s): {string.Join(", ", created)}.");
+        var aclRules = _acl.GenerateRules(services);
+        await _acl.ApplyRulesAsync(aclRules, ct);
+        steps.Add($"Applied {aclRules.Count} ownership/permission rule(s).");
+        var firewallRules = _firewall.GenerateRules();
+        await _firewall.ApplyRulesAsync(firewallRules, ct);
+        steps.Add($"Loaded {firewallRules.Count} firewall rule(s): database, cache, eventing and agents reachable from this machine only.");
 
         await _stateMachine.TransitionAsync(InstallerPhase.Install, "services", cancellationToken: ct);
         await _services.RegisterAllAsync(services, ct);

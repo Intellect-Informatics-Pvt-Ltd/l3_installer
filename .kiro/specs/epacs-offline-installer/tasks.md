@@ -322,7 +322,7 @@ and the claim has to be updated with it — which is the point.
 
 - [~] 8. Implement Installer.Actions — Fresh Install
   - [x] 8.1 Data root creation with subdirectories from config
-  - [ ] 8.2 NTFS ACL application — **`DataRootInitializer.cs:10` says "handled separately"; `IAclEngine` has no implementation.**
+  - [~] 8.2 ACL application — **Linux built 2026-09-13** (`Platform/Linux/LinuxAclEngine`: ownership + mode per writer, group-read for readers, root-only for keys/backups/state; applied in the pipeline's `platform` step before registration; 17 contract tests). NTFS on Windows still unbuilt: `NotYetBuiltAclEngine` refuses by name, exit 4.
   - [x] 8.3 Payload extraction, resumable via a progress manifest
   - [x] 8.4 Binary deployment, side-by-side `releases/<ver>/` + `current` link — *note: the flip is delete-then-create, which is **not** the atomic commit the design claims; see 17.6*
   - [x] 8.5 Config generation from templates — reworked. Four token namespaces (`${DataRoot}`, `${epcfg:field}`, `${Services:MySql:Port}`, `${Service:l3_FAS:Port}`), values JSON-escaped where the output is JSON, the result parsed before it is written, and **an unresolved token aborts generation** listing every one at once. Previously it logged a warning and left `${...}` in the file.
@@ -330,7 +330,7 @@ and the claim has to be updated with it — which is the point.
     - The systemd units are contract-tested against the properties `ops/ansible/roles/deployapp/templates/l2r2-service.service.j2` carries — tier restart policy, `LimitNOFILE=65535`, the modest `ProtectSystem=full` hardening, journal output. Two unit shapes for the same 26 services is how an offline node comes to behave differently from the estate under load.
     - **Defect found and fixed on the way.** The shipped service map puts `${Services:Web:HttpsPort}` in ePACSWeb's arguments and `${Services:MySql:Port}` in MySQL's health check, and the Windows orchestrator substituted only `${BinaryRoot}` and `${DataRoot}`. Kestrel would have been handed a literal `${...}` as its URL. Token vocabulary is now shared (`InstallerTokenMap`) between both orchestrators and `ConfigGenerator`, and an unknown token aborts registration. It had never failed because it had never run.
   - [x] 8.7 Service start in dependency order
-  - [ ] 8.8 Firewall rules — **`IFirewallManager` has no implementation.**
+  - [~] 8.8 Firewall rules — **Linux built 2026-09-13** (`NftablesFirewallManager`: one owned table `inet epacs`, drop by default, loopback open, DB/cache/eventing/agent ports localhost-only, app ports open, `nft -c -f` before load, uninstall deletes only our table). Windows Firewall still unbuilt: refuses by name.
   - [ ] 8.9 Windows Update reboot suppression — **no code.**
   - [x] **8.12 (NEW) Per-service environment variables.** `ServiceMapEntry.Environment`, parsed by the topology loader and applied by `ServiceOrchestrator.ApplyEnvironmentAsync`. **This is the state-selection mechanism and the installer had no way to express it at all**: `ASPNETCORE_ENVIRONMENT=<STATE>` selects `appsettings.<STATE>.json` inside every L2-R2 service. Note `sc.exe` has no verb for environment variables — the Service Control Manager reads them from a `REG_MULTI_SZ` value under the service's own registry key, so that is what is written. A failure to set them **aborts registration**: a service that starts without its environment serves the wrong state's configuration and never fails.
   - [ ] 8.10 Integration tests for fresh install — **`Installer.IntegrationTests/UnitTest1.cs` is one placeholder fact.**
@@ -422,7 +422,7 @@ and the claim has to be updated with it — which is the point.
   - [x] 18.1 Payload verification against the installed manifest — the same media gate install and upgrade use. Re-laying binaries from an unverified medium turns a drifted node into a compromised one.
   - [x] 18.2 Binary replacement, and `--replace-binaries` for a suspected quarantine where "looks intact" is exactly what cannot be trusted.
   - [x] 18.3 Configuration regeneration. **Refuses rather than skips** when no `.epcfg` is supplied: a repair that leaves broken configuration in place and reports success is worse than one that did not run.
-  - [ ] 18.4 ACL re-application — `IAclEngine` still has no implementation on either platform.
+  - [x] 18.4 ACL re-application — **Done 2026-09-13 on Linux:** repair diagnoses ownership/permission drift in the dry run (a `Permissions` finding) and re-lays accounts, ownership and the firewall unconditionally before re-registering. Windows: the dry run names the missing engine; apply exits 4.
   - [x] 18.5 Service re-registration — **unconditional**, because it is idempotent and cheap and a service whose binary path or environment has drifted is invisible until it fails to start, which is the situation somebody runs repair to get out of.
   - [x] 18.6 Tests — 13. Everything is diagnosed **before** anything changes, so a dry run is a complete answer rather than a prefix of one.
   - **Refuses a medium carrying a different version**, naming upgrade as the right tool: changing version under the name "repair" would skip the backup and the migrations an upgrade takes.
@@ -482,9 +482,9 @@ and the claim has to be updated with it — which is the point.
   - [ ] **Authenticode over the outer package** — still unimplemented, still deferred to a WiX bootstrapper that does not exist (ADR-0001). Detached CMS over the manifest remains the only tamper-evidence in force.
   - [ ] **The signing ceremony** — Gate G3. Who holds the EV certificate, where the key lives, who may invoke it. `CmsCodeSigner` is deliberately agnostic (a `Func<X509Certificate2?>`, so a PFX, an `X509Store` or an HSM/Key Vault CNG provider all work) precisely so that answer can change without touching code.
 
-- [ ] 25. Implement Access Control (ACL) Engine — **`IAclEngine` declared; zero implementing types. 25.1–25.5 unimplemented.**
+- [~] 25. Implement Access Control (ACL) Engine — **Linux: `LinuxAclEngine` (2026-09-13)**, rules generated from options + the topology's `data_directories`, apply, verify (owner/mode/group by `stat`). **Windows: unbuilt**, refuses by name.
 
-- [ ] 26. Implement Firewall Rules Engine — **`IFirewallManager` declared; zero implementing types. 26.1–26.5 unimplemented.**
+- [~] 26. Implement Firewall Rules Engine — **Linux: `NftablesFirewallManager` (2026-09-13)**. **Windows: unbuilt**, refuses by name.
 
 - [~] 27. Implement Audit Log Hash Chaining
   - [x] 27.1 `IAuditChain` interface · [x] 27.2 Hash chain over critical events · [x] 27.3 Chain verification
@@ -499,7 +499,7 @@ and the claim has to be updated with it — which is the point.
 
 ## Cross-cutting items the original plan did not carry
 
-- [ ] **X1. Create the Windows service accounts.** `ServiceOrchestrator` registers services with
+- [~] **X1. Create the service accounts.** *Linux done 2026-09-13:* `SystemdServiceAccountProvisioner` (`getent` then `useradd --system --shell /usr/sbin/nologin --no-create-home`) runs before ACLs in install and repair. *Windows still open* (`NotYetBuiltServiceAccountProvisioner` refuses by name). Original note: `ServiceOrchestrator` registers services with
   `obj= ".\ePACSDbSvc"` and friends, but nothing creates those local accounts or sets their
   passwords. Registration will fail on a clean machine.
 

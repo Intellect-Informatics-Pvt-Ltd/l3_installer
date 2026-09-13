@@ -1,3 +1,5 @@
+using Installer.Actions.Platform;
+using SharedKernel.Security;
 using FluentAssertions;
 using Installer.Actions.Install;
 using Installer.Actions.Topology;
@@ -55,17 +57,25 @@ public sealed class RepairEngineTests : IDisposable
                                               It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<CancellationToken>()))
                .ReturnsAsync(new ConfigGenerationResult { GeneratedFiles = ["appsettings.json"], TokensResolved = 3 });
         _binaries.Setup(b => b.ResolveCurrent()).Returns(Path.Combine(_root, "bin", "releases", "3.3.0"));
+        _accounts.Setup(a => a.EnsureAsync(It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        _acl.Setup(a => a.GenerateRules(It.IsAny<IReadOnlyList<ServiceMapEntry>>())).Returns([]);
+        _acl.Setup(a => a.VerifyAsync(It.IsAny<IReadOnlyList<AclRule>>(), It.IsAny<CancellationToken>())).ReturnsAsync(new AclVerificationResult { Valid = true });
+        _firewall.Setup(f => f.GenerateRules()).Returns([]);
         _payloadConfig.Setup(p => p.RewriteAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<CancellationToken>()))
                       .ReturnsAsync(new PayloadConfigResult { Rewritten = new Dictionary<string, int>(), Skipped = [] });
     }
 
     private readonly Mock<ISiteConfigLoader> _siteLoader = new();
     private readonly Mock<IPayloadConfigRewriter> _payloadConfig = new();
+    private readonly Mock<IServiceAccountProvisioner> _accounts = new();
+    private readonly Mock<IAclEngine> _acl = new();
+    private readonly Mock<IFirewallManager> _firewall = new();
     private readonly SiteTokenSource _siteTokens = new();
 
     private RepairEngine Build() => new(
         _verifier.Object, _serviceMap.Object, _payloads.Object, _binaries.Object,
         _config.Object, _services.Object, _payloadConfig.Object,
+        _accounts.Object, _acl.Object, _firewall.Object,
         _siteLoader.Object, _siteTokens,
         Options.Create(Opts), Options.Create(new ComponentsOptions()),
         NullLogger<RepairEngine>.Instance);
@@ -330,5 +340,52 @@ public sealed class RepairEngineTests : IDisposable
 
         _siteLoader.Verify(l => l.LoadAsync(It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
         _siteTokens.Tokens["epcfg:pacs_id"].Should().Be("AP-1");
+    }
+
+    // ── 18.4: the boundary is diagnosed and re-laid ──────────────────────────
+
+    [Fact]
+    public async Task Dry_run_names_permission_drift_without_touching_it()
+    {
+        GivenTheReleaseIsOnDisk();
+        GivenConfigurationExists();
+        _acl.Setup(a => a.VerifyAsync(It.IsAny<IReadOnlyList<AclRule>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AclVerificationResult { Valid = false, Mismatches = ["/data/mysql/data: owner is root, expected epacs-db"] });
+
+        var result = await Build().RepairAsync(Request(dryRun: true));
+
+        result.Findings.Should().Contain(f => f.Area == RepairArea.Permissions && f.Severity == RepairSeverity.Broken && f.Message.Contains("expected epacs-db"));
+        _acl.Verify(a => a.ApplyRulesAsync(It.IsAny<IReadOnlyList<AclRule>>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Apply_re_lays_accounts_ownership_and_firewall_before_re_registering()
+    {
+        GivenTheReleaseIsOnDisk();
+        GivenConfigurationExists();
+        var order = new List<string>();
+        _accounts.Setup(a => a.EnsureAsync(It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<CancellationToken>())).Callback(() => order.Add("accounts")).ReturnsAsync([]);
+        _acl.Setup(a => a.ApplyRulesAsync(It.IsAny<IReadOnlyList<AclRule>>(), It.IsAny<CancellationToken>())).Callback(() => order.Add("acl")).Returns(Task.CompletedTask);
+        _firewall.Setup(f => f.ApplyRulesAsync(It.IsAny<IReadOnlyList<FirewallRule>>(), It.IsAny<CancellationToken>())).Callback(() => order.Add("firewall")).Returns(Task.CompletedTask);
+        _services.Setup(s => s.RegisterAllAsync(It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<CancellationToken>())).Callback(() => order.Add("register")).Returns(Task.CompletedTask);
+
+        var result = await Build().RepairAsync(Request(dryRun: false));
+
+        order.Should().ContainInOrder("accounts", "acl", "firewall", "register");
+        result.Repaired.Should().Contain(r => r.Contains("ownership/permission")).And.Contain(r => r.Contains("firewall"));
+    }
+
+    [Fact]
+    public async Task On_a_platform_without_the_engines_the_dry_run_still_answers_and_names_the_gap()
+    {
+        GivenTheReleaseIsOnDisk();
+        GivenConfigurationExists();
+        _acl.Setup(a => a.VerifyAsync(It.IsAny<IReadOnlyList<AclRule>>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new PlatformNotSupportedException("The ACL engine is not built for Windows (tasks.md 25)."));
+
+        var result = await Build().RepairAsync(Request(dryRun: true));
+
+        result.Success.Should().BeTrue("a dry run is a complete answer");
+        result.Findings.Should().Contain(f => f.Area == RepairArea.Permissions && f.Message.Contains("tasks.md 25"));
     }
 }

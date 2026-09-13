@@ -1,10 +1,12 @@
 using Installer.Actions.Install;
+using Installer.Actions.Platform;
 using Installer.Actions.Topology;
 using Installer.Core.SiteConfig;
 using ManifestVerifier;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Configuration;
+using SharedKernel.Security;
 using SharedKernel.Contracts;
 
 namespace Installer.Core.Repair;
@@ -40,6 +42,9 @@ public sealed class RepairEngine : IRepairEngine
     private readonly IConfigGenerator _configGenerator;
     private readonly IServiceOrchestrator _services;
     private readonly IPayloadConfigRewriter _payloadConfig;
+    private readonly IServiceAccountProvisioner _accounts;
+    private readonly IAclEngine _acl;
+    private readonly IFirewallManager _firewall;
     private readonly ISiteConfigLoader _siteConfigLoader;
     private readonly ISiteTokenSource _siteTokens;
     private readonly IOptions<InstallerOptions> _options;
@@ -54,6 +59,9 @@ public sealed class RepairEngine : IRepairEngine
         IConfigGenerator configGenerator,
         IServiceOrchestrator services,
         IPayloadConfigRewriter payloadConfig,
+        IServiceAccountProvisioner accounts,
+        IAclEngine acl,
+        IFirewallManager firewall,
         ISiteConfigLoader siteConfigLoader,
         ISiteTokenSource siteTokens,
         IOptions<InstallerOptions> options,
@@ -62,6 +70,9 @@ public sealed class RepairEngine : IRepairEngine
     {
         _siteConfigLoader = siteConfigLoader;
         _payloadConfig = payloadConfig;
+        _accounts = accounts;
+        _acl = acl;
+        _firewall = firewall;
         _siteTokens = siteTokens;
         _manifestVerifier = manifestVerifier;
         _serviceMapLoader = serviceMapLoader;
@@ -167,6 +178,21 @@ public sealed class RepairEngine : IRepairEngine
         findings.Add(new RepairFinding(RepairArea.Services, RepairSeverity.Requested,
             $"{services.Count} service(s) will be re-registered from the service map."));
 
+        // 18.4, diagnosed: what the boundary looks like now, so a dry run names the drift.
+        try
+        {
+            var aclCheck = await _acl.VerifyAsync(_acl.GenerateRules(services), cancellationToken);
+            findings.Add(aclCheck.Valid
+                ? new RepairFinding(RepairArea.Permissions, RepairSeverity.Requested, "Ownership and permissions match the rules; they will be re-applied regardless.")
+                : new RepairFinding(RepairArea.Permissions, RepairSeverity.Broken,
+                    $"{aclCheck.Mismatches.Count} ownership/permission mismatch(es): {string.Join("; ", aclCheck.Mismatches.Take(5))}" +
+                    (aclCheck.Mismatches.Count > 5 ? "; …" : "")));
+        }
+        catch (PlatformNotSupportedException ex)
+        {
+            findings.Add(new RepairFinding(RepairArea.Permissions, RepairSeverity.Broken, ex.Message));
+        }
+
         if (request.DryRun)
         {
             return new RepairResult
@@ -230,6 +256,22 @@ public sealed class RepairEngine : IRepairEngine
                 cancellationToken);
             repaired.Add($"Rewrote {rewrite.Rewritten.Count} service configuration(s) for this node.");
         }
+
+        // 18.4: the least-privilege boundary is re-laid unconditionally, like the registrations
+        // - a directory whose owner drifted (a support engineer's chown -R on a bad night) does
+        // not fail now; its service fails weeks later. Accounts first, because chown needs them.
+        var created = await _accounts.EnsureAsync(services, cancellationToken);
+        if (created.Count > 0)
+        {
+            repaired.Add($"Re-created missing service account(s): {string.Join(", ", created)}.");
+        }
+
+        var aclRules = _acl.GenerateRules(services);
+        await _acl.ApplyRulesAsync(aclRules, cancellationToken);
+        repaired.Add($"Re-applied {aclRules.Count} ownership/permission rule(s).");
+        var firewallRules = _firewall.GenerateRules();
+        await _firewall.ApplyRulesAsync(firewallRules, cancellationToken);
+        repaired.Add($"Re-loaded {firewallRules.Count} firewall rule(s).");
 
         // Unconditional, because it is idempotent and cheap, and because a service whose binary
         // path or environment has drifted is invisible until it fails to start — which is
