@@ -1,0 +1,53 @@
+# The Debian end-to-end (tasks.md W9): a real Debian 12 with systemd, the installer published
+# self-contained, a real MySQL 8.4, the harness as the application payload - install, health,
+# backup, restore, repair, uninstall, a COUNT at every gate. See tests/integration/debian-e2e.sh.
+#
+# Nightly and on demand, not on every push: it downloads ~600 MB (MySQL, the runtime) and needs
+# a privileged container so systemd can be PID 1. A failure here is a node that does not install,
+# which no unit test can say.
+name: e2e-debian
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 20 * * *"   # 02:00 IST
+
+permissions:
+  contents: read
+
+jobs:
+  debian-12-systemd:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start a Debian 12 container with systemd as PID 1
+        run: |
+          docker run -d --privileged --name e2e --cgroupns=host \
+            -v /sys/fs/cgroup:/sys/fs/cgroup:rw -v "$PWD:/src" \
+            jrei/systemd-debian:12
+          sleep 5
+          docker exec e2e systemctl is-system-running --wait || true
+          docker exec e2e bash -c "apt-get update -qq && apt-get install -y -qq curl xz-utils ca-certificates libaio1 libnuma1 nftables libicu72 >/dev/null"
+
+      - name: Install the .NET SDK inside the container (to publish; the medium bundles the runtime)
+        run: |
+          docker exec e2e bash -c "curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 10.0 --install-dir /usr/share/dotnet && ln -sf /usr/share/dotnet/dotnet /usr/local/bin/dotnet && dotnet --version"
+
+      - name: Run the end-to-end
+        run: docker exec -e EPACS_E2E_KEEP=1 e2e bash -c "cd /src && tests/integration/debian-e2e.sh" | tee e2e.log
+
+      - name: Collect the node's own evidence
+        if: always()
+        run: |
+          mkdir -p artifacts/e2e
+          cp e2e.log artifacts/e2e/ || true
+          docker exec e2e bash -c "ls -la /data/epacs/logs/installer/ 2>/dev/null; cat /data/epacs/logs/installer/*.log 2>/dev/null" > artifacts/e2e/installer-logs.txt || true
+          docker exec e2e bash -c "journalctl -u 'epacs-*' --no-pager 2>/dev/null | tail -500" > artifacts/e2e/journal.txt || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-debian
+          path: artifacts/e2e

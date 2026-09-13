@@ -88,12 +88,31 @@ jobs:
             sleep 2
           done
           docker exec fp-mysql mysql -pfp -e "SELECT @@lower_case_table_names, VERSION();"
+          # The pack round-trip test drives REAL mysqldump/mysql clients on the runner against
+          # this server (PackLiveTests); without the clients it skips, naming the variable.
+          sudo apt-get update -qq && sudo apt-get install -y -qq mysql-client >/dev/null
+          ls -l /usr/bin/mysql /usr/bin/mysqldump
 
       - name: Test (installer)
         env:
           # Only set on Linux; on Windows the live tests skip and say so.
           EPACS_TEST_MYSQL: ${{ runner.os == 'Linux' && 'Server=127.0.0.1;Port=13399;Database=epacs;Uid=root;Pwd=fp' || '' }}
+          EPACS_TEST_MYSQL_BIN: ${{ runner.os == 'Linux' && '/usr/bin' || '' }}
         run: dotnet test ePACS.Installer.sln -c Release --no-build --logger "trx;LogFileName=installer.trx" --results-directory artifacts/test-results
+
+      - name: No test that could have run was skipped (Linux)
+        # The live tests skip, honestly, where their dependency is absent. On this leg the
+        # dependency is present, so a skip is a failure - a skip here would be the CI equivalent
+        # of rc=0 meaning nothing.
+        if: runner.os == 'Linux'
+        run: |
+          skipped=$(grep -o 'skipped="[0-9]*"' artifacts/test-results/installer.trx | head -1 | grep -o '[0-9]*')
+          echo "skipped on Linux: ${skipped:-0}"
+          test "${skipped:-0}" -eq 0 || { echo "::error::${skipped} test(s) skipped on the leg where every dependency is present"; exit 1; }
+
+      - name: Render the QA evidence pack from this run's TRX
+        if: runner.os == 'Linux'
+        run: python3 build/installer-test-evidence.py artifacts/test-results/installer.trx > artifacts/test-results/installer-evidence.md
 
       - name: tasks.md cannot claim evidence that does not exist (X4)
         # Every [x] item that names a code path in backticks must resolve under src/ or tests/.

@@ -1,0 +1,134 @@
+# The Debian end-to-end's service map: the infrastructure entries from topology/infrastructure.linux.yaml
+# that the e2e medium carries (MySQL, the two agents), plus the harness as the application payload.
+# prepends these to the 27 discovered application services when it emits service-map.l2r2.linux.yaml.
+#
+# Groups: core (always), cache (Components:Cache:Enabled, default ON - the cache holds the
+# idempotency keys that stop a retried request posting twice), eventing (Components:Eventing:Enabled,
+# default OFF - nothing in the offline node's pack path uses Kafka; ADR-0003, ADR-0011).
+#
+# Accounts are Linux system users. SystemdServiceAccountProvisioner creates any account named
+# here that does not exist (`useradd --system --shell /usr/sbin/nologin`). `l2r2` is the estate's
+# own run user (ops/ansible/group_vars/all.yml: l2r2_run_user).
+services:
+  - name: "ePACSMySQL"
+    display_name: "ePACS MySQL"
+    description: "MySQL 8.4 LTS database server for ePACS"
+    executable: "${BinaryRoot}/current/mysql/bin/mysqld"
+    arguments: "--defaults-file=${DataRoot}/mysql/my.cnf"
+    account: "epacs-db"
+    start_order: 10
+    stop_order: 90
+    startup_type: "Automatic"
+    group: "core"
+    health_check:
+      type: "command"
+      command: "${BinaryRoot}/current/mysql/bin/mysqladmin"
+      arguments: "ping --host=127.0.0.1 --port=${Services:MySql:Port} --user=healthcheck"
+      timeout_seconds: 10
+      success_exit_code: 0
+    recovery:
+      first_failure: { action: "restart", delay_seconds: 60 }
+      second_failure: { action: "restart", delay_seconds: 120 }
+      subsequent: { action: "restart_and_bundle", delay_seconds: 300 }
+      reset_after_seconds: 86400
+    data_directories:
+      - "${DataRoot}/mysql/data"
+      - "${DataRoot}/mysql/logs"
+
+  # Garnet, verified against Redis 7.4.11 on 2026-08-29 (ADR-0002). `--lua` IS NOT OPTIONAL:
+  # without it ERPClient's rate limiter fails OPEN with one log line. See samples/service-map.yaml.
+  - name: "ePACSSync"
+    display_name: "ePACS Sync Agent"
+    description: "Ledger-pack export and policy-pack apply (ADR-0011)"
+    executable: "${BinaryRoot}/current/dotnet/dotnet"
+    arguments: "${BinaryRoot}/current/sync/Sync.Agent.dll"
+    account: "l2r2"
+    start_order: 160
+    stop_order: 40
+    startup_type: "Automatic"
+    group: "core"
+    health_check:
+      type: "http"
+      url: "http://127.0.0.1:${Services:Sync:HealthPort}/health/live"
+      timeout_seconds: 10
+      expected_status: 200
+    recovery:
+      first_failure: { action: "restart", delay_seconds: 60 }
+      second_failure: { action: "restart", delay_seconds: 120 }
+      subsequent: { action: "restart_and_bundle", delay_seconds: 300 }
+      reset_after_seconds: 86400
+    data_directories:
+      - "${DataRoot}/packs/outbound"
+      - "${DataRoot}/packs/inbound"
+    environment:
+      ASPNETCORE_ENVIRONMENT: "${epcfg:state_code}"
+
+  - name: "ePACSInstallerAgent"
+    display_name: "ePACS Installer Agent"
+    description: "Always-on health monitoring, backup scheduling, and operational automation"
+    executable: "${BinaryRoot}/current/dotnet/dotnet"
+    arguments: "${BinaryRoot}/current/agent/Installer.Agent.dll"
+    account: "LocalSystem"
+    start_order: 170
+    stop_order: 10
+    startup_type: "Automatic"
+    group: "core"
+    health_check:
+      type: "http"
+      url: "http://127.0.0.1:${Services:Agent:HealthPort}/health/live"
+      timeout_seconds: 5
+      expected_status: 200
+    recovery:
+      first_failure: { action: "restart", delay_seconds: 10 }
+      second_failure: { action: "restart", delay_seconds: 30 }
+      subsequent: { action: "restart", delay_seconds: 60 }
+      reset_after_seconds: 86400
+    data_directories: []
+
+  # ---- the harness, as the application payload of the end-to-end -----------------------------
+  - name: "Pacs.Fas.Api"
+    display_name: "ePACS Harness FAS API"
+    description: "Stand-in for l3_FAS in the Debian end-to-end"
+    executable: "${BinaryRoot}/current/dotnet/dotnet"
+    arguments: "${BinaryRoot}/current/services/Pacs.Fas.Api/Pacs.Fas.Api.dll --urls http://127.0.0.1:5101"
+    account: "l2r2"
+    start_order: 120
+    stop_order: 80
+    startup_type: "Automatic"
+    group: "core"
+    health_check:
+      type: "http"
+      url: "http://127.0.0.1:5101/health/ready"
+      timeout_seconds: 60
+      expected_status: 200
+    recovery:
+      first_failure: { action: "restart", delay_seconds: 10 }
+      second_failure: { action: "restart", delay_seconds: 30 }
+      subsequent: { action: "restart_and_bundle", delay_seconds: 60 }
+      reset_after_seconds: 86400
+    data_directories: []
+    environment:
+      ASPNETCORE_ENVIRONMENT: "${epcfg:state_code}"
+  - name: "Pacs.Loans.Api"
+    display_name: "ePACS Harness Loans API"
+    description: "Stand-in for l3_Loans in the Debian end-to-end"
+    executable: "${BinaryRoot}/current/dotnet/dotnet"
+    arguments: "${BinaryRoot}/current/services/Pacs.Loans.Api/Pacs.Loans.Api.dll --urls http://127.0.0.1:5102"
+    account: "l2r2"
+    start_order: 130
+    stop_order: 70
+    startup_type: "Automatic"
+    group: "core"
+    health_check:
+      type: "http"
+      url: "http://127.0.0.1:5102/health/ready"
+      timeout_seconds: 60
+      expected_status: 200
+    recovery:
+      first_failure: { action: "restart", delay_seconds: 10 }
+      second_failure: { action: "restart", delay_seconds: 30 }
+      subsequent: { action: "restart_and_bundle", delay_seconds: 60 }
+      reset_after_seconds: 86400
+    data_directories: []
+    environment:
+      ASPNETCORE_ENVIRONMENT: "${epcfg:state_code}"

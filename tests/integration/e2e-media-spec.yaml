@@ -1,0 +1,24 @@
+# The end-to-end medium: the same shape as topology/media-spec.l2r2.yaml with the harness as the
+# application payload. Rendered by tests/integration/debian-e2e.sh.
+release:
+  stack_version: "${STACK_VERSION}"
+  schema_version: ${SCHEMA_VERSION}
+  min_os_build: 0
+  installer_tool_version: "4.0.0"
+  created_by: "debian-e2e"
+  signing_cert_thumbprint: "${SIGNING_THUMBPRINT}"
+  hotfix_base_version: null
+payloads:
+  - { name: "config",           source: "${STAGE}/config",                        install_order: 1,  required: true, group: "core" }
+  - { name: "config-templates", source: "${E2E_TEMPLATES}", install_order: 2, required: true, group: "core" }
+  - { name: "db",               source: "${STAGE}/db/stable_baseline_ddl.sql",    install_order: 3,  required: true, group: "core" }
+  - { name: "dotnet",           source: "${STAGE}/dotnet",                        install_order: 10, required: true, group: "core" }
+  - { name: "mysql",            source: "${STAGE}/mysql",                         install_order: 11, required: true, group: "core" }
+  - { name: "services",         source: "${STAGE}/services",                      install_order: 20, required: true, group: "core" }
+  - { name: "sync",             source: "${STAGE}/sync",                          install_order: 21, required: true, group: "core" }
+  - { name: "agent",            source: "${STAGE}/agent",                         install_order: 22, required: true, group: "core" }
+compatibility:
+  min_upgrade_from: "${MIN_UPGRADE_FROM}"
+  max_upgrade_from: "${MAX_UPGRADE_FROM}"
+  requires_side_by_side: false
+  breaking_schema_change: false
