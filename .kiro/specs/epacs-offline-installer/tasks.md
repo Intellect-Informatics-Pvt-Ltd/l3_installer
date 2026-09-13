@@ -311,7 +311,7 @@ and the claim has to be updated with it — which is the point.
   - [x] 6.1 State enum · [x] 6.2 Checkpoint persistence (fsync'd state.json) · [x] 6.3 Recovery mode
   - [x] 6.4 Concurrent execution guard — **rewritten 2026-08-29, because the original did not guard.** It used `new Mutex(initiallyOwned: false, ...)` and treated `createdNew == true` as "acquired". That constructor creates the mutex *without owning it*, so nothing was ever held and two installers would both have proceeded to register services. Because nothing was owned, `ReleaseMutex()` then threw on **every** run — caught and logged as a warning, which is how a guard that never worked stayed invisible for a year. Now an exclusive lock file (`FileShare.None`, the only share mode that excludes on Unix as well as Windows) with the holder's PID in a readable sidecar. 7 tests.
   - [x] 6.5 Mode detection (fresh/upgrade/repair from junction target)
-  - [ ] 6.6 Unit tests for state transitions, checkpoint persistence, recovery — **no state machine test file exists.**
+  - [x] 6.6 Unit tests for state transitions, checkpoint persistence, recovery — `InstallerStateMachineTests`, 8 tests (2026-09-13): every transition on disk before it returns, terminal states, recovery from a dead PID with the original correlation id, no recovery after Success/Failed, a TORN checkpoint is a clean start.
 
 - [~] 7. Implement Installer.Actions — Precheck Suite
   - [x] 7.1 OS version · [x] 7.2 Disk space · [x] 7.3 RAM · [x] 7.4 Port availability · [x] 7.5 Admin rights · [x] 7.6 Pending reboot
@@ -358,8 +358,8 @@ and the claim has to be updated with it — which is the point.
 - [~] 11. Implement SupportBundle collector
   - [~] 11.1 Log collection with redaction — **local regex redaction (password, connection string, Aadhaar, phone). Not `IRedactionEngine` from `Intellect.Erp.Observability` as AC-6.3 requires.**
   - [x] 11.2–11.6 Service status, versions, OS/disk/RAM, config, correlation filtering
-  - [~] 11.7 Encrypted ZIP packaging — **`ZipFile.CreateFromDirectory`, plaintext. No encryption.**
-  - [ ] 11.8 Unit tests for redaction and packaging
+  - [x] 11.7 Encrypted ZIP packaging — **Done 2026-09-13:** encrypted to the state's recovery key (`Backup:Encryption:RecoveryPublicKeyPath`) with the wrapped key beside it; without a key the bundle stays a plain zip and the log says so.
+  - [x] 11.8 Unit tests for redaction and packaging — `TamperEvidenceTests` (2026-09-13). Redaction now covers any credential-named key by suffix (`SenderPassword`, `ClientSecret`, `aadharapikey` all went through in clear before) and `Pwd=`/`Password=` inside any connection string - the generated site config's `ConnectionStrings:conn` was not redacted by the old key-name rule.
 
 - [~] 12. Implement Installer.CLI (silent mode)
   - [x] 12.1 CLI argument parser — rewritten as a testable `CliOptions` type. Accepts both `/flag:value` and `--flag=value`; an unrecognised argument is an **error**, never ignored (a silently dropped `--apply` means an operator believes they installed something and did not). 16 tests.
@@ -489,12 +489,12 @@ and the claim has to be updated with it — which is the point.
 
 - [~] 27. Implement Audit Log Hash Chaining
   - [x] 27.1 `IAuditChain` interface · [x] 27.2 Hash chain over critical events · [x] 27.3 Chain verification
-  - [ ] 27.4 Unit tests — **none. This is tamper-evidence code with zero test coverage.**
+  - [x] 27.4 Unit tests — `TamperEvidenceTests` (2026-09-13): chaining across processes, tamper at entry N detected at N, a deleted entry breaks at the gap, empty chain.
 
 - [~] 28. Implement Secret Management
   - [x] 28.1 `ISecretStore` interface · [x] 28.2 Credential generation · [x] 28.3 Encryption at rest · [x] 28.4 Rotation support
   - [ ] 28.5 Secret-scan validation — **no scanner.**
-  - [ ] 28.6 Unit tests — **none. This is the code that generates and stores the database password.**
+  - [x] 28.6 Unit tests — `TamperEvidenceTests` (2026-09-13): round trip with nothing in clear, a real 32-byte master key at 0600, a copied store without the key **refuses** (it used to return an empty store - and the next write would have overwritten the real passwords), rotation, named key material, uniform password generation.
 
 ---
 

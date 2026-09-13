@@ -9,4 +9,8 @@
     <ProjectReference Include="..\SharedKernel\SharedKernel.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Installer.UnitTests" />
+  </ItemGroup>
+
 </Project>

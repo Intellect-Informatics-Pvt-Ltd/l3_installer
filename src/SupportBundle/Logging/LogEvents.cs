@@ -38,4 +38,8 @@ internal static partial class LogEvents
 
     [LoggerMessage(EventId = 4002, Level = LogLevel.Information, Message = "Support bundle created: {ZipPath}.")]
     public static partial void BundleCreated(ILogger logger, string zipPath);
+
+    [LoggerMessage(EventId = 4090, Level = LogLevel.Warning,
+        Message = "Support bundle {ZipPath} is NOT encrypted: Backup:Encryption:RecoveryPublicKeyPath is not configured. It carries redacted logs and configuration; carry it accordingly.")]
+    public static partial void BundleUnencrypted(ILogger logger, string zipPath);
 }

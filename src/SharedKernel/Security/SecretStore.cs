@@ -43,12 +43,12 @@ public sealed partial class SecretStore : ISecretStore
         const string special = "!@#$%^&*()-_=+[]{}|;:,.<>?";
         var chars = includeSpecialChars ? alphanumeric + special : alphanumeric;
 
+        // GetInt32 is uniform; `byte % alphabet.Length` was not (256 is not a multiple of 62 or
+        // 88), which skewed the first characters of every generated password towards 'a'.
         var password = new char[length];
-        var randomBytes = RandomNumberGenerator.GetBytes(length);
-
         for (var i = 0; i < length; i++)
         {
-            password[i] = chars[randomBytes[i] % chars.Length];
+            password[i] = chars[RandomNumberGenerator.GetInt32(chars.Length)];
         }
 
         return new string(password);
@@ -104,18 +104,34 @@ public sealed partial class SecretStore : ISecretStore
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         }
 
+        // A store that EXISTS and cannot be read is a hard stop, never an empty store. Until
+        // 2026-09-13 this returned empty on any failure - so a node whose master key was wrong
+        // or missing would see "no root password", and the next StoreAsync would overwrite
+        // secrets.enc with a fresh store, losing the real database passwords for good. The
+        // failure that must be loud was the one being swallowed.
+        var encryptedBytes = await File.ReadAllBytesAsync(_secretsFilePath, ct);
+        byte[] decryptedBytes;
         try
         {
-            var encryptedBytes = await File.ReadAllBytesAsync(_secretsFilePath, ct);
-            var decryptedBytes = Decrypt(encryptedBytes);
-            var json = Encoding.UTF8.GetString(decryptedBytes);
+            decryptedBytes = Decrypt(encryptedBytes);
+        }
+        catch (CryptographicException ex)
+        {
+            throw new CryptographicException(
+                $"The secret store at {_secretsFilePath} exists but cannot be decrypted with this node's master key " +
+                $"({Path.Combine(Path.GetDirectoryName(_secretsFilePath)!, "master.key")}). Nothing was changed, and nothing will be: a store that " +
+                "cannot be read is not an empty store. Restore keys/master.key from where it was escrowed, or restore the node from a backup with the state's recovery key.", ex);
+        }
+
+        var json = Encoding.UTF8.GetString(decryptedBytes);
+        try
+        {
             return JsonSerializer.Deserialize<Dictionary<string, string>>(json)
                    ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         }
-        catch (Exception ex)
+        catch (JsonException ex)
         {
-            _logger.LogError(ex, "Failed to load secrets file. Returning empty store.");
-            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            throw new CryptographicException($"The secret store at {_secretsFilePath} decrypted to something that is not a secret store; the master key is wrong for this file.", ex);
         }
     }
 

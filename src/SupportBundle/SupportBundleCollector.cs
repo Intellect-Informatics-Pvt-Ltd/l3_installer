@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Configuration;
+using SharedKernel.Crypto;
 
 namespace SupportBundle;
 
@@ -14,15 +15,21 @@ namespace SupportBundle;
 public sealed partial class SupportBundleCollector : ISupportBundleCollector
 {
     private readonly IOptions<InstallerOptions> _options;
+    private readonly IOptions<BackupOptions> _backup;
     private readonly ILogger<SupportBundleCollector> _logger;
 
     public SupportBundleCollector(
         IOptions<InstallerOptions> options,
+        IOptions<BackupOptions> backup,
         ILogger<SupportBundleCollector> logger)
     {
         _options = options;
+        _backup = backup;
         _logger = logger;
     }
+
+    /// <summary>Beside an encrypted bundle: which key it is wrapped to, and the wrapped key.</summary>
+    public const string KeyFileSuffix = ".key.json";
 
     public async Task<string> CollectAsync(
         string? correlationId = null,
@@ -65,6 +72,25 @@ public sealed partial class SupportBundleCollector : ISupportBundleCollector
 
             ZipFile.CreateFromDirectory(stagingDir, zipPath, CompressionLevel.Optimal, includeBaseDirectory: false);
 
+            // 11.7: encrypted to the state's recovery key when one is configured, so a bundle on a
+            // stick in a bag is readable only by the state. Without a key the bundle stays in
+            // clear and the log says so - never silently.
+            var recoveryKey = _backup.Value.Encryption.RecoveryPublicKeyPath;
+            if (!string.IsNullOrWhiteSpace(recoveryKey) && File.Exists(recoveryKey))
+            {
+                var pem = await File.ReadAllTextAsync(recoveryKey, cancellationToken);
+                var dek = BackupCrypto.NewKey();
+                var encPath = zipPath + BackupCrypto.Suffix;
+                await BackupCrypto.EncryptFileAsync(zipPath, encPath, dek, cancellationToken);
+                File.Delete(zipPath);
+                var wrapped = new { algorithm = "AES-256-GCM(data) / RSA-OAEP-SHA256(key)", recipientKeyId = BackupCrypto.PublicKeyId(pem), wrappedKey = BackupCrypto.WrapKeyToPublicKey(dek, pem) };
+                System.Security.Cryptography.CryptographicOperations.ZeroMemory(dek);
+                await File.WriteAllTextAsync(encPath + KeyFileSuffix, System.Text.Json.JsonSerializer.Serialize(wrapped), cancellationToken);
+                LogEvents.BundleCreated(_logger, encPath);
+                return encPath;
+            }
+
+            LogEvents.BundleUnencrypted(_logger, zipPath);
             LogEvents.BundleCreated(_logger, zipPath);
             return zipPath;
         }
@@ -198,12 +224,18 @@ public sealed partial class SupportBundleCollector : ISupportBundleCollector
     /// Redacts sensitive data from text content.
     /// Masks: passwords, connection strings, certificates, Aadhaar numbers, phone numbers.
     /// </summary>
-    private static string RedactSensitiveData(string content)
+    internal static string RedactSensitiveData(string content)
     {
-        // Redact password values in JSON
-        content = PasswordPattern().Replace(content, "$1\"***REDACTED***\"");
+        // Any JSON key that NAMES a credential - password, secret, key, token, pwd - by suffix,
+        // case-insensitively. The earlier pattern matched the key "password" exactly, so
+        // "SenderPassword", "ClientSecret" and "aadharapikey" all went through in clear.
+        content = SecretKeyPattern().Replace(content, "$1\"***REDACTED***\"");
 
-        // Redact connection strings
+        // Connection strings under any key: the generated site config carries the application
+        // password as Pwd=... inside ConnectionStrings:conn, which no key-name rule catches.
+        content = CredentialSegmentPattern().Replace(content, "$1=***REDACTED***");
+
+        // Redact connection strings named as such
         content = ConnectionStringPattern().Replace(content, "$1\"***REDACTED***\"");
 
         // Redact Aadhaar numbers (12 digits)
@@ -218,8 +250,11 @@ public sealed partial class SupportBundleCollector : ISupportBundleCollector
         return content;
     }
 
-    [GeneratedRegex(@"(""[Pp]assword""\s*:\s*)""[^""]*""", RegexOptions.Compiled)]
-    private static partial Regex PasswordPattern();
+    [GeneratedRegex(@"(""[A-Za-z0-9_.-]*(?:password|passwd|pwd|secret|apikey|api_key|accesskey|privatekey|authtoken|token)""\s*:\s*)""[^""]*""", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
+    private static partial Regex SecretKeyPattern();
+
+    [GeneratedRegex(@"\b(pwd|password)=[^;""'\s]*", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
+    private static partial Regex CredentialSegmentPattern();
 
     [GeneratedRegex(@"(""[Cc]onnection[Ss]tring""\s*:\s*)""[^""]*""", RegexOptions.Compiled)]
     private static partial Regex ConnectionStringPattern();
