@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
-using BackupRestore.Crypto;
+using SharedKernel.Crypto;
 using FluentAssertions;
 
 namespace Installer.UnitTests;

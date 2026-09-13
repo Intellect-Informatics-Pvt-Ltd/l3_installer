@@ -88,6 +88,36 @@ Every pack carries, in this order, and the reader checks them in this order:
 - **Schema.** A pack cut against a different `schema_fingerprint` is refused; upgrade first
   (ADR-0013).
 
+### What v0 is, precisely (built 2026-09-13)
+
+- **A ledger pack is a whole snapshot of the society's scope**, not a delta: every society table
+  the classification names, restricted to this society's rows, as idempotent `REPLACE` statements
+  (`mysqldump --no-create-info --replace --where`). Applying a pack twice, or applying pack N after
+  N+1 was lost and re-cut, lands the same rows. The GTID position at snapshot time is recorded as
+  the watermark — that is what an incremental (binlog) v1 would cut from; v0 only needs it to be
+  honest. Empty tables are counted and skipped, so a pack is minutes, not hours.
+- **Signing.** A ledger pack is CMS-signed with the site key (`Packs:SigningPfxPath`, issued by the
+  state and delivered with the site pack). Without one the pack is written unsigned and the log
+  says so; the state refuses unsigned packs. A configured key that is missing is a refusal, not a
+  silent unsigned pack. Inbound packs must be signed by the pinned state key
+  (`Packs:InboundSignerThumbprint`, defaulting to the release key); `Packs:RequireSignedInbound`
+  is true and false only on a bench.
+- **Encryption.** With `Packs:RecipientPublicKeyPath` (the state's public key) a ledger pack's
+  data files are AES-256-GCM under a per-pack key wrapped RSA-OAEP to that key, so a stick in a
+  bag leaks nothing; without it the pack is signed only and its manifest says `encryption: null`.
+  Policy packs come down signed, not encrypted, in v0: the node holds no key to encrypt to yet.
+- **The ledger** is `<DataRoot>/sync/pack-ledger.json`, written whole and renamed into place:
+  produced and applied cursors per pack type. The state keeps the mirror image; the two agreeing
+  is reconciliation (G12).
+- **The applier** walks `<Packs:Root>/inbound/` in manifest sequence order: applies what chains,
+  acknowledges a replay into `applied/<name>.replay`, leaves a gap where it is, and moves anything
+  else to `rejected/<name>/` with `REJECTED.txt` naming the refusal — so the next person holding
+  the stick knows without the log. After apply it COUNTS: a society table by this society's rows,
+  a master whole; a count below what the pack carried is not recorded as applied and is applied
+  again next sweep (it is idempotent).
+- **The site data pack** (`.epdata`, the carve-out) is `PackType.SiteData`, seq 1 from genesis,
+  applied by the same applier during the bootstrap.
+
 ### What is frozen
 
 `Components:Sync:Mode` takes `packs` (default) or `stream`. `stream` is refused with exit 4

@@ -3,7 +3,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.IO.Compression;
 using BackupRestore.Backup;
-using BackupRestore.Crypto;
+using SharedKernel.Crypto;
 using BackupRestore.Models;
 using Installer.Actions.Database;
 using Microsoft.Extensions.Logging;

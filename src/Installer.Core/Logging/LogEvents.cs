@@ -129,4 +129,30 @@ internal static partial class LogEvents
     [LoggerMessage(EventId = 1090, Level = LogLevel.Information,
         Message = "Repair of {Version} complete: {Steps} step(s). Data was not touched.")]
     public static partial void RepairCompleted(ILogger logger, string version, int steps);
+
+    // Packs (ADR-0011): 1100-1119
+    [LoggerMessage(EventId = 1100, Level = LogLevel.Information,
+        Message = "Ledger pack {PackId} cut: {Tables} table(s), {Rows} row(s), {Skipped} empty table(s) skipped; {Signing}, {Encryption}.")]
+    public static partial void LedgerPackCut(ILogger logger, string packId, int tables, long rows, long skipped, string signing, string encryption);
+
+    [LoggerMessage(EventId = 1101, Level = LogLevel.Warning,
+        Message = "Ledger pack will be written UNSIGNED: {Why}. The state refuses unsigned packs; configure Packs:SigningPfxPath with the site key the state issued.")]
+    public static partial void LedgerPackUnsigned(ILogger logger, string why);
+
+    [LoggerMessage(EventId = 1102, Level = LogLevel.Warning,
+        Message = "Table {Table} is classified as society data but does not exist in this database; skipped. The classification is newer than this node's schema.")]
+    public static partial void PackTableAbsent(ILogger logger, string table);
+
+    [LoggerMessage(EventId = 1103, Level = LogLevel.Information,
+        Message = "Pack {Pack} ({Type} seq {Seq}) applied and counted: {Tables} table(s), {Rows} row(s).")]
+    public static partial void PackApplied(ILogger logger, string pack, string type, long seq, int tables, long rows);
+
+    [LoggerMessage(EventId = 1104, Level = LogLevel.Information, Message = "Pack {Pack} was already applied; acknowledged, not re-applied.")]
+    public static partial void PackReplayAcknowledged(ILogger logger, string pack);
+
+    [LoggerMessage(EventId = 1105, Level = LogLevel.Warning, Message = "Pack {Pack} is waiting: {Why}")]
+    public static partial void PackWaiting(ILogger logger, string pack, string why);
+
+    [LoggerMessage(EventId = 1106, Level = LogLevel.Error, Message = "Pack {Pack} REJECTED ({Refusal}): {Why}")]
+    public static partial void PackRejected(ILogger logger, string pack, string refusal, string why);
 }

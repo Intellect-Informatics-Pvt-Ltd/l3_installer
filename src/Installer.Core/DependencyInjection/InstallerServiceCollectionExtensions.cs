@@ -6,6 +6,7 @@ using Installer.Actions.Platform.Linux;
 using Installer.Actions.Prechecks;
 using Installer.Actions.Topology;
 using Installer.Actions.Uninstall;
+using Installer.Core.Packs;
 using Installer.Core.Pipeline;
 using Installer.Core.Schema;
 using Installer.Core.Upgrade;
@@ -101,6 +102,12 @@ public static class InstallerServiceCollectionExtensions
         services.AddOptions<ComponentsOptions>()
             .Bind(configuration.GetSection(ComponentsOptions.SectionName))
             .ValidateOnStart();
+
+        // How data leaves and re-enters the node (ADR-0011). `stream` is refused at use.
+        services.AddOptions<PacksOptions>()
+            .Bind(configuration.GetSection(PacksOptions.SectionName))
+            .Validate(o => o.Mode is "packs" or "stream", "Packs:Mode must be 'packs' or 'stream'")
+            .ValidateOnStart();
     }
 
     private static void AddVerification(IServiceCollection services)
@@ -144,6 +151,12 @@ public static class InstallerServiceCollectionExtensions
         // Post-start health in three verdicts - healthy / listening / failed - so "accepted a
         // connection" is never upgraded to "healthy" (13.3, G31).
         services.AddSingleton<IHealthAggregator, HealthAggregator>();
+        // Sync v0 (ADR-0011): ledger packs out, policy packs in. The Kafka->NLDR stream is frozen.
+        services.AddSingleton<IMySqlAccess, MySqlAccess>();
+        services.AddSingleton<ILedgerPackExporter, LedgerPackExporter>();
+        services.AddSingleton<IPolicyPackApplier, PolicyPackApplier>();
+        // The verifier for inbound packs: the same CMS verifier as the medium, with no signing key.
+        services.AddSingleton<ICodeSigner>(_ => new CmsCodeSigner(() => null));
         // PLATFORM SELECTION — ADR-0010.
         //
         // The only place in the product that branches on the operating system. Everything above

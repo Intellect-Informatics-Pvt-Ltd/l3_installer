@@ -3,9 +3,14 @@ using SharedKernel.Configuration;
 using Sync.Agent.Connectivity;
 using Sync.Agent.Outbox;
 
-namespace Sync.Agent;
+namespace Sync.Agent.Frozen;
 
 /// <summary>
+/// FROZEN 2026-09-13 BY ADR-0011. This is the Kafka→NLDR stream worker as it stood; it is not
+/// registered, not built upon, and kept in the tree so the question it answered stays visible.
+/// The buildable path is <see cref="PackSyncWorker"/>. If an NLDR programme materialises it
+/// consumes ledger packs; nothing here needs to be revived for that.
+///
 /// The ePACS Sync Agent — manages bidirectional data synchronization with NLDR.
 /// Responsibilities:
 /// 1. Outbox relay: MySQL → Kafka (local)
@@ -17,18 +22,18 @@ namespace Sync.Agent;
 /// Business operations are NEVER blocked by sync failures.
 /// MySQL outbox is the durable anchor — survives Kafka/network failures.
 /// </summary>
-public sealed class SyncAgentWorker : BackgroundService
+public sealed class StreamSyncWorker : BackgroundService
 {
     private readonly IOutboxRelay _outboxRelay;
     private readonly ConnectivityMonitor _connectivityMonitor;
     private readonly IOptions<ServicesOptions> _servicesOptions;
-    private readonly ILogger<SyncAgentWorker> _logger;
+    private readonly ILogger<StreamSyncWorker> _logger;
 
-    public SyncAgentWorker(
+    public StreamSyncWorker(
         IOutboxRelay outboxRelay,
         ConnectivityMonitor connectivityMonitor,
         IOptions<ServicesOptions> servicesOptions,
-        ILogger<SyncAgentWorker> logger)
+        ILogger<StreamSyncWorker> logger)
     {
         _outboxRelay = outboxRelay;
         _connectivityMonitor = connectivityMonitor;

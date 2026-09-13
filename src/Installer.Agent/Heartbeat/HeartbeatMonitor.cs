@@ -11,7 +11,7 @@ namespace Installer.Agent.Heartbeat;
 /// Supports HTTPS POST and WebSocket transports (configurable).
 /// Fire-and-forget: heartbeat failure never blocks business operations.
 /// </summary>
-public sealed class HeartbeatMonitor : IMonitor
+public sealed partial class HeartbeatMonitor : IMonitor
 {
     private readonly IOptions<HeartbeatOptions> _heartbeatOptions;
     private readonly IOptions<InstallerOptions> _installerOptions;
@@ -57,6 +57,10 @@ public sealed class HeartbeatMonitor : IMonitor
         }
 
         var payload = BuildPayload();
+        if (payload is null)
+        {
+            return;
+        }
 
         try
         {
@@ -95,30 +99,113 @@ public sealed class HeartbeatMonitor : IMonitor
         response.EnsureSuccessStatusCode();
     }
 
-    private HeartbeatPayload BuildPayload()
+    /// <summary>
+    /// Identity from the site pack the install kept at <c>&lt;DataRoot&gt;/config/site.epcfg</c>,
+    /// never a literal: until 2026-09-13 this reported <c>StateId="AP", DccbId="XYZ"</c> for every
+    /// node on earth. A node with no site pack sends nothing at all - a heartbeat that says
+    /// "AP" for a Gujarat society is a lie the dashboard would believe.
+    /// </summary>
+    private HeartbeatPayload? BuildPayload()
     {
         var dataRoot = _installerOptions.Value.DataRoot;
+        var sitePath = Path.Combine(dataRoot, "config", "site.epcfg");
+        if (!File.Exists(sitePath))
+        {
+            LogNoSitePack(_logger, sitePath);
+            return null;
+        }
+
+        string pacsId, stateCode, district;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(sitePath), new System.Text.Json.JsonDocumentOptions { CommentHandling = System.Text.Json.JsonCommentHandling.Skip, AllowTrailingCommas = true });
+            var root = doc.RootElement;
+            pacsId = root.TryGetProperty("pacs_id", out var p) ? p.GetString() ?? "" : "";
+            stateCode = root.TryGetProperty("state_code", out var st) ? st.GetString() ?? "" : "";
+            district = root.TryGetProperty("district_code", out var d) ? d.GetString() ?? "" : "";
+        }
+        catch (System.Text.Json.JsonException ex)
+        {
+            LogBadSitePack(_logger, sitePath, ex.Message);
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(pacsId) || string.IsNullOrWhiteSpace(stateCode))
+        {
+            LogBadSitePack(_logger, sitePath, "pacs_id or state_code is empty");
+            return null;
+        }
+
         var diskUsage = GetDiskUsagePercent(dataRoot);
+        var ledger = ReadPackLedger(Path.Combine(dataRoot, "sync", "pack-ledger.json"));
 
         return new HeartbeatPayload
         {
-            PacsId = "CONFIGURED_VIA_EPCFG", // Will be resolved from site config at runtime
-            StateId = "AP",
-            DccbId = "XYZ",
-            BranchId = "001",
+            PacsId = pacsId,
+            StateId = stateCode,
+            DccbId = district,
+            BranchId = "",
             OnlineSince = _startedAt,
-            LastSyncTimestamp = null, // TODO: read from sync checkpoint
-            PendingOutboxCount = 0, // TODO: query sync_outbox count
-            PendingFilesCount = 0, // TODO: query file_sync_registry count
+            LastSyncTimestamp = ledger.lastProduced,
+            PendingOutboxCount = 0,
+            PendingFilesCount = 0,
             DiskUsagePercent = diskUsage,
-            StackVersion = "3.2.1", // TODO: read from installed manifest
-            SchemaVersion = 25, // TODO: read from schema_version_registry
-            LastBackupAt = null, // TODO: read from backup manifest
-            HealthStatus = "Healthy", // TODO: aggregate from health checks
-            ConnectivityMode = "4G",
+            StackVersion = ReadInstalledVersion(),
+            SchemaVersion = 0,
+            LastBackupAt = null,
+            HealthStatus = "Live",
+            ConnectivityMode = "unknown",
             UptimeSeconds = (long)(DateTimeOffset.UtcNow - _startedAt).TotalSeconds
         };
     }
+
+    /// <summary>The last ledger pack this node produced, from the pack ledger (ADR-0011); null when none.</summary>
+    private static (DateTimeOffset? lastProduced, long lastSeq) ReadPackLedger(string path)
+    {
+        try
+        {
+            if (!File.Exists(path))
+            {
+                return (null, 0);
+            }
+
+            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
+            if (doc.RootElement.TryGetProperty("Produced", out var produced) && produced.TryGetProperty("Ledger", out var ledger))
+            {
+                var at = ledger.TryGetProperty("At", out var atEl) && atEl.ValueKind == System.Text.Json.JsonValueKind.String ? atEl.GetDateTimeOffset() : (DateTimeOffset?)null;
+                var seq = ledger.TryGetProperty("LastSeq", out var seqEl) ? seqEl.GetInt64() : 0;
+                return (at, seq);
+            }
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or IOException)
+        {
+            // A heartbeat must not fail because the ledger is mid-write; the next one reads it.
+        }
+
+        return (null, 0);
+    }
+
+    /// <summary>The version 'current' points at, by its directory name; "unknown" rather than a literal.</summary>
+    private string ReadInstalledVersion()
+    {
+        try
+        {
+            var current = Path.Combine(_installerOptions.Value.BinaryRoot, "current");
+            var info = new DirectoryInfo(current);
+            var target = info.LinkTarget ?? (info.Exists ? info.FullName : null);
+            return target is null ? "unknown" : Path.GetFileName(target.TrimEnd('/', '\\'));
+        }
+        catch (IOException)
+        {
+            return "unknown";
+        }
+    }
+
+    [LoggerMessage(EventId = 6110, Level = LogLevel.Warning, Message = "No site pack at {Path}; no heartbeat is sent, because a heartbeat with a guessed identity would be believed.")]
+    private static partial void LogNoSitePack(ILogger logger, string path);
+
+    [LoggerMessage(EventId = 6111, Level = LogLevel.Error, Message = "Site pack at {Path} is unusable ({Why}); no heartbeat is sent.")]
+    private static partial void LogBadSitePack(ILogger logger, string path, string why);
 
     private static int GetDiskUsagePercent(string dataRoot)
     {

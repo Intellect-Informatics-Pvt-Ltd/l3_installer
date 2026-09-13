@@ -1,34 +1,21 @@
-using SharedKernel.Configuration;
+using Installer.Core.DependencyInjection;
 using SharedKernel.Hosting;
 using Sync.Agent;
-using Sync.Agent.Connectivity;
-using Sync.Agent.Inbox;
-using Sync.Agent.Outbox;
 
+// The ePACS Sync Agent, v0: ledger packs out, policy packs in (ADR-0011).
+//
+// The composition root is the installer's own, so the exporter and the applier resolve the same
+// MySQL access, secret store, fingerprinter and options the installer used to build the node.
+// The Kafka->NLDR stream (Sync.Agent/Frozen/) is not registered: Packs:Mode=stream exits 4.
 var builder = Host.CreateApplicationBuilder(args);
 
-// Bind configuration
-builder.Services.Configure<InstallerOptions>(builder.Configuration.GetSection(InstallerOptions.SectionName));
-builder.Services.Configure<ServicesOptions>(builder.Configuration.GetSection(ServicesOptions.SectionName));
+builder.Services.AddInstaller(builder.Configuration);
 
 // /health/live and /health/ready on the port the service map probes (Services:Sync:HealthPort) - G31.
+// Ready flips once the worker has loaded the site pack and knows which society it serves.
 builder.Services.AddHealthEndpoint(builder.Configuration.GetValue("Services:Sync:HealthPort", 5080));
 
-// Register HTTP client for NLDR communication
-builder.Services.AddHttpClient("NLDR");
-
-// Register connectivity state (singleton — shared across components)
-builder.Services.AddSingleton(new ConnectivityState(
-    failureThreshold: builder.Configuration.GetValue("Services:Sync:CircuitBreakerFailureThreshold", 5),
-    cooldownSeconds: builder.Configuration.GetValue("Services:Sync:CircuitBreakerHalfOpenSeconds", 300)));
-
-// Register components
-builder.Services.AddSingleton<IOutboxRelay, OutboxRelay>();
-builder.Services.AddSingleton<IInboxProcessor, InboxProcessor>();
-builder.Services.AddSingleton<ConnectivityMonitor>();
-
-// Register the worker
-builder.Services.AddHostedService<SyncAgentWorker>();
+builder.Services.AddHostedService<PackSyncWorker>();
 
 var host = builder.Build();
 host.Run();

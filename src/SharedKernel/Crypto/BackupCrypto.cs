@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 
-namespace BackupRestore.Crypto;
+namespace SharedKernel.Crypto;
 
 /// <summary>
 /// The backup package's cryptography, in one place so it can be read in one sitting.

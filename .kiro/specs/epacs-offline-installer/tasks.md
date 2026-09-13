@@ -584,7 +584,7 @@ and the claim has to be updated with it — which is the point.
   after the baseline, counted per table against the manifest; refuses an unsigned pack, a count
   mismatch, or a `pacs_id` that is not the `.epcfg`'s.
 
-- [ ] **X11. Ledger and policy packs (G29, G30, ADR-0011/0012).** `Sync.Agent` re-shaped:
+- [x] **X11. Ledger and policy packs (G29, G30, ADR-0011/0012).** *Done 2026-09-13 for the node side:* `SharedKernel/Packs/` (envelope, ledger, classification), `Installer.Core/Packs/` (`LedgerPackExporter`, `PolicyPackApplier`, `MySqlAccess`), `Sync.Agent/PackSyncWorker` (the stream worker moved to `Frozen/`, unregistered; `Packs:Mode=stream` exits 4). The DI crash is gone with the frozen registrations; the heartbeat reads its identity from the installed site pack and sends nothing without one. 10 envelope tests (every refusal by name, with a real CMS signer) + 11 engine tests (export scope, chaining, unsigned/missing key, encryption to the state, apply-and-count, replay/gap/tamper sweep, impostor signer, schema mismatch, short count, site data from nothing). *Still owed on the L2-R2 side:* the state's ingest and the ADR-0012 cuts. Original scope: `Sync.Agent` re-shaped:
   `LedgerPackExporter` (watermark from `AuditChain`, PacsId scope from the classification file,
   CMS-signed, count manifest, hash-chained to the previous pack) and `PolicyPackApplier`
   (signature before content, sequence and `prev_pack_hash` enforced, replay acknowledged and
