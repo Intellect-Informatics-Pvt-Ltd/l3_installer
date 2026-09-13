@@ -29,6 +29,8 @@
     <ProjectReference Include="..\..\src\Installer.Core\Installer.Core.csproj" />
     <ProjectReference Include="..\..\src\Installer.CLI\Installer.CLI.csproj" />
     <ProjectReference Include="..\..\src\Installer.MediaBuilder\Installer.MediaBuilder.csproj" />
+    <ProjectReference Include="..\..\src\Installer.Agent\Installer.Agent.csproj" />
+    <ProjectReference Include="..\..\src\SupportBundle\SupportBundle.csproj" />
   </ItemGroup>
 
 </Project>

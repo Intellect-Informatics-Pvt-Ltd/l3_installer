@@ -319,7 +319,7 @@ and the claim has to be updated with it — which is the point.
   - [x] 7.8 Existing installation detection — implemented in `ModeDetector`, not as an `IPrecheck`
   - [x] 7.9 `.epcfg` signature validation — **Done 2026-09-13:** a DETACHED CMS sidecar (`site.epcfg.sig`) over the pack's exact bytes, verified against the pinned release key exactly like a medium's manifest. The embedded `signature` field - never verified by any build, and "presence only" until today - is now refused without the sidecar, naming the `openssl cms -sign` command that produces one. The install keeps the sidecar beside the kept copy so repair and the sync agent re-verify as strictly. 4 tests (verifies, altered after signing, impostor signer, embedded-only).
   - [ ] 7.10 Temp staging relocation — **`ResolvedTempRoot` is a default path; there is no threshold check and no relocation.**
-  - [~] 7.11 Unit tests per precheck — **5 facts in `PrecheckRunnerTests`; the individual checks are not covered.**
+  - [x] 7.11 Unit tests per precheck — `PrecheckTests` (2026-09-13): each check with a passing and a failing case, driven through options or a real condition (a held port), never by mocking the machine away. **Found and fixed:** `OsVersionCheck` compared the Linux KERNEL patch level with a Windows build number and would have blocked every Debian install with "Windows 10 1809 required"; it is now platform-aware (Debian/Ubuntu + systemd + kernel ≥ 5 per ADR-0010).
 
 - [~] 8. Implement Installer.Actions — Fresh Install
   - [x] 8.1 Data root creation with subdirectories from config
@@ -347,13 +347,13 @@ and the claim has to be updated with it — which is the point.
   - [x] 9.1 Stop in reverse order · [x] 9.2 Deregister · [x] 9.3 Binary removal · [x] 9.4 Data preserved by default
   - [~] 9.5 Governance token verification for purge — **flow and typed-confirmation check are written.** `DenyAllOverrideTokenValidator` (`Installer.Core/DependencyInjection/`) is the only implementation and refuses every token, deliberately, until real validation exists. *(The earlier note that `UninstallAction` cannot be constructed went stale on 2026-08-29; corrected 2026-09-13.)*
   - [ ] 9.6 Final support bundle before removal — **`UninstallAction` does not reference the collector.**
-  - [ ] 9.7 Unit tests for uninstall flow and token verification
+  - [x] 9.7 Unit tests for uninstall flow and token verification — `UninstallAndMonitorTests` (2026-09-13): stop → deregister → firewall → binaries, data kept; purge refused without a token, with a refused token, and with the wrong typed confirmation - the data survives each; purge with a valid token and the exact confirmation removes it.
 
 - [~] 10. Implement Installer.Agent (v1)
   - [x] 10.1 Worker with configurable loop · [x] 10.2 Health polling · [x] 10.3 Disk monitoring · [x] 10.4 Log rotation · [x] 10.6 Config drift (SHA-256)
   - [ ] 10.5 Support bundle auto-generation on critical failure — **the agent never references the collector.**
   - [ ] 10.7 Clock drift detection — **no monitor. The five registered monitors are DiskSpace, ConfigDrift, LogRotation, FileSync, Heartbeat.**
-  - [ ] 10.8 Unit tests per monitor
+  - [x] 10.8 Unit tests per monitor — `UninstallAndMonitorTests` (2026-09-13) for ConfigDrift and DiskSpace; HealthAggregator and the endpoint have their own. **Found and fixed:** the drift baseline was in-memory only, so after every restart the monitor logged "no baseline, skipping" forever; it is persisted at `<DataRoot>/installer/config-baseline.json` and loaded on first check.
 
 - [~] 11. Implement SupportBundle collector
   - [~] 11.1 Log collection with redaction — **local regex redaction (password, connection string, Aadhaar, phone). Not `IRedactionEngine` from `Intellect.Erp.Observability` as AC-6.3 requires.**

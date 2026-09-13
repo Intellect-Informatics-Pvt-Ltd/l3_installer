@@ -15,6 +15,9 @@ public sealed class PrecheckOptions
     /// </summary>
     public int MinOsBuild { get; set; } = 17763;
 
+    /// <summary>Linux: the least kernel major the node may run (Debian 12 ships 6.1).</summary>
+    public int MinLinuxKernelMajor { get; set; } = 5;
+
     /// <summary>
     /// Minimum physical RAM in GB required to proceed (blocking).
     /// </summary>

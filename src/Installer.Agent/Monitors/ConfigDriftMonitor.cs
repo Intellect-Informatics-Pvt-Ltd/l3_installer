@@ -52,6 +52,7 @@ public sealed class ConfigDriftMonitor : IMonitor
             return;
         }
 
+        _expectedHashes.Clear();
         var configFiles = Directory.GetFiles(configDir, "*.*", SearchOption.AllDirectories);
         foreach (var file in configFiles)
         {
@@ -60,19 +61,50 @@ public sealed class ConfigDriftMonitor : IMonitor
             _expectedHashes[file] = hash;
         }
 
+        // Persisted, because an in-memory baseline is lost on every restart - and a monitor that
+        // "skips, no baseline" after each restart is a monitor that never runs on a real node.
+        Directory.CreateDirectory(Path.GetDirectoryName(BaselinePath)!);
+        var temp = BaselinePath + ".tmp";
+        await File.WriteAllTextAsync(temp, System.Text.Json.JsonSerializer.Serialize(_expectedHashes), cancellationToken);
+        File.Move(temp, BaselinePath, overwrite: true);
+
         LogEvents.DriftBaselineCaptured(_logger, _expectedHashes.Count);
     }
 
+    /// <summary>Where the baseline lives between restarts.</summary>
+    public string BaselinePath => Path.Combine(_installerOptions.Value.DataRoot, "installer", "config-baseline.json");
+
     public async Task ExecuteAsync(CancellationToken cancellationToken = default)
     {
-        if (_expectedHashes.Count == 0)
+        var findings = await CheckAsync(cancellationToken);
+        if (findings is null)
         {
             _logger.LogInformation("No config baseline established. Skipping drift check.");
-            return;
+        }
+        else if (findings.Count == 0)
+        {
+            LogEvents.DriftCheckPassed(_logger, _expectedHashes.Count);
+        }
+    }
+
+    /// <summary>The drift, one line per changed or missing file; null when no baseline exists yet.</summary>
+    public async Task<IReadOnlyList<string>?> CheckAsync(CancellationToken cancellationToken = default)
+    {
+        if (_expectedHashes.Count == 0 && File.Exists(BaselinePath))
+        {
+            var saved = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(await File.ReadAllTextAsync(BaselinePath, cancellationToken));
+            foreach (var (k, v) in saved ?? [])
+            {
+                _expectedHashes[k] = v;
+            }
         }
 
-        var driftDetected = false;
+        if (_expectedHashes.Count == 0)
+        {
+            return null;
+        }
 
+        var findings = new List<string>();
         foreach (var (filePath, expectedHash) in _expectedHashes)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -80,7 +112,7 @@ public sealed class ConfigDriftMonitor : IMonitor
             if (!File.Exists(filePath))
             {
                 _logger.LogWarning("Config drift: File missing — {FilePath}.", filePath);
-                driftDetected = true;
+                findings.Add($"missing: {filePath}");
                 continue;
             }
 
@@ -90,14 +122,11 @@ public sealed class ConfigDriftMonitor : IMonitor
                 _logger.LogWarning(
                     "Config drift detected: {FilePath}. Expected: {Expected}, Actual: {Actual}.",
                     filePath, expectedHash[..12] + "...", currentHash[..12] + "...");
-                driftDetected = true;
+                findings.Add($"changed: {filePath}");
             }
         }
 
-        if (!driftDetected)
-        {
-            LogEvents.DriftCheckPassed(_logger, _expectedHashes.Count);
-        }
+        return findings;
     }
 
     private static async Task<string> ComputeFileHashAsync(string filePath, CancellationToken ct)
