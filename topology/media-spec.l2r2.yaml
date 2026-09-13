@@ -1,6 +1,6 @@
 # The L2-R2 release medium - what a PACS node is installed from. Companion to the generated
 # topology in this directory; staged by build/stage-l2r2-medium.py in the L2-R2 workspace, which
-# publishes the 27 services framework-dependent (ADR-0009), assembles the control payloads from
+# publishes the 28 services framework-dependent (ADR-0009), assembles the control payloads from
 # db/ and topology/, redacts secrets (build/config-hygiene.py) and then runs:
 #
 #   epacs-media build --spec l3_installer/topology/media-spec.l2r2.yaml \

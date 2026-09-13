@@ -8,7 +8,7 @@
 # infrastructure and precede the sync agent (160) and the installer agent (170).
 #
 # ePACS infrastructure services on Debian - HAND-OWNED. build/generate-topology.py (L2-R2 workspace)
-# prepends these to the 27 discovered application services when it emits service-map.l2r2.linux.yaml.
+# prepends these to the 28 discovered application services when it emits service-map.l2r2.linux.yaml.
 #
 # Groups: core (always), cache (Components:Cache:Enabled, default ON - the cache holds the
 # idempotency keys that stop a retried request posting twice), eventing (Components:Eventing:Enabled,
@@ -142,7 +142,7 @@ services:
       reset_after_seconds: 86400
     data_directories: []
 
-  # ---- APPLICATION SERVICES, GENERATED. 27 entries. ----------------------------------
+  # ---- APPLICATION SERVICES, GENERATED. 28 entries. ----------------------------------
   # health_check `tcp` means the module maps no health route in its Program.cs (G31): the
   # installer can prove it is LISTENING, not that it is healthy, and says so.
   - name: l3_PACDetailsAPI
@@ -459,6 +459,36 @@ services:
       type: tcp
       host: 127.0.0.1
       port: '5009'
+      timeout_seconds: 10
+    recovery:
+      first_failure:
+        action: restart
+        delay_seconds: 30
+      second_failure:
+        action: restart
+        delay_seconds: 60
+      subsequent:
+        action: restart_and_bundle
+        delay_seconds: 120
+      reset_after_seconds: 86400
+    data_directories: []
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${epcfg:state_code}
+      DOTNET_ROLL_FORWARD: LatestPatch
+  - name: l3_SHG
+    display_name: ePACS SHG
+    description: L2-R2 l3_SHG (l3_SHG/SHG/SHG.csproj) on port 5039
+    executable: ${BinaryRoot}/current/dotnet/dotnet
+    arguments: ${BinaryRoot}/current/services/l3_SHG/SHG.dll
+    account: l2r2
+    start_order: 130
+    stop_order: 70
+    startup_type: Automatic
+    group: app
+    health_check:
+      type: tcp
+      host: 127.0.0.1
+      port: '5039'
       timeout_seconds: 10
     recovery:
       first_failure:

@@ -256,6 +256,7 @@
         "_apiUrl": "http://127.0.0.1:5037/api/v1/"
       }
     },
+    "l3_SHG": {},
     "l3_aasami": {
       "APIKeys": {
         "MembershipUrl": "http://127.0.0.1:5005/api/v1/",

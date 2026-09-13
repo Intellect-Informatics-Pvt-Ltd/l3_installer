@@ -45,16 +45,16 @@ public sealed class TopologyContractTests
     // ── The map itself ───────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Linux_map_carries_the_infrastructure_and_all_27_application_services()
+    public async Task Linux_map_carries_the_infrastructure_and_all_28_application_services()
     {
         var services = await NewLoader().LoadAsync(Topology("service-map.l2r2.linux.yaml"));
 
         var apps = services.Where(s => s.Name.StartsWith("l3_", StringComparison.Ordinal)).ToList();
-        apps.Should().HaveCount(27, "the estate is 25 middleware + the UI + l3_lob");
+        apps.Should().HaveCount(28, "the estate is 26 middleware + the UI + l3_lob; l3_SHG joined the list on 2026-09-13 when it first pinned a port");
         apps.Select(a => a.Name).Should().Contain(["l3_FAS", "l3_Loans", "l3_ERPClient", "l3_lob", "l3_membership"]);
 
         services.Select(s => s.Name).Should().Contain(["ePACSMySQL", "ePACSCache", "ePACSEventing", "ePACSSync", "ePACSInstallerAgent"]);
-        services.Should().HaveCount(32);
+        services.Should().HaveCount(33, "5 infrastructure + 28 applications");
     }
 
     [Fact]
@@ -109,7 +109,7 @@ public sealed class TopologyContractTests
     [Fact]
     public async Task Health_checks_are_recorded_never_invented()
     {
-        // 0 of 27 map /health/live or /health/ready (G31). Where a module maps a route it is
+        // 0 of 28 map /health/live or /health/ready (G31). Where a module maps a route it is
         // used; where it maps none the check is TCP, and the aggregator says "listening, not
         // known healthy" rather than assuming.
         var services = await NewLoader().LoadAsync(Topology("service-map.l2r2.linux.yaml"));
@@ -135,13 +135,13 @@ public sealed class TopologyContractTests
             .ToList();
 
         ports.Should().OnlyHaveUniqueItems();
-        ports.Should().HaveCount(27, "every application service exposes exactly one port");
+        ports.Should().HaveCount(28, "every application service exposes exactly one port");
     }
 
     // ── Applications configuration ───────────────────────────────────────────
 
     [Fact]
-    public void Applications_json_binds_into_ServicesOptions_with_27_entries()
+    public void Applications_json_binds_into_ServicesOptions_with_28_entries()
     {
         var config = new ConfigurationBuilder()
             .AddJsonFile(Topology("appsettings.Applications.json"))
@@ -149,7 +149,7 @@ public sealed class TopologyContractTests
         var options = new ServicesOptions();
         config.GetSection(ServicesOptions.SectionName).Bind(options);
 
-        options.Applications.Should().HaveCount(27);
+        options.Applications.Should().HaveCount(28);
         options.Applications["l3_FAS"].Port.Should().Be(5010);
         options.Applications["l3_FAS"].StartOrder.Should().Be(20);
         options.Applications["l3_FAS"].HealthPath.Should().BeNull();
