@@ -23,8 +23,18 @@
 > **Framework maturity:** ~17,800 LOC, **243 installer tests + 16 harness contract tests**, 0
 > integration tests. **The product runs end to end** as of 2026-08-29: verification, prechecks,
 > topology load, install and uninstall execute through a composed pipeline with a checkpoint at
-> every phase. Payload bundling, the database bootstrap, and the upgrade/restore/repair engines
-> are still absent — and the CLI now says so, with a distinct exit code, instead of returning 0.
+> every phase. *(Stale by the evening of the same day and corrected 2026-09-13: payload bundling
+> (W6), the database bootstrap (F3) and the upgrade/restore/repair engines (W7, §18) were all
+> built on 2026-08-29. Only Backup still exits 4, for want of encryption — 15.6.)*
+>
+> **Reviewed 2026-09-13 as an enterprise-architecture pass** — L2-R2
+> `docs/offline-installer-assessment-and-plan.md` §12 is the status of record. Verdict: *the
+> chassis is real; the adapter to the product is not.* Ten new gaps, G25–G34, most of them owed
+> by the L2-R2 side (no 27-service topology, sibling URLs on a dev host, TD-123 secrets in the
+> medium, no society in an imposed baseline, business flows that cross the PACS boundary). Four
+> rulings taken with the owner: **carve-out** as the data origin, **packs not a stream**
+> (ADR-0011), **approvals deferred, never bypassed** (ADR-0012), and the migration runner applies
+> the estate's migration (ADR-0013 supersedes ADR-0005). Items X7–X11 below carry them.
 >
 > **Technology baseline (2026-08-29):** aligned to `r2-dev-stable`. **.NET 10** (`net10.0`, SDK
 > pinned 10.0.302 via `global.json` — the same pin as the L2-R2 workspace), central package
@@ -44,6 +54,14 @@ can accept the L2-R2 stack. Each is expanded in the phases below.
 | ~~**F1**~~ | ~~No composition root.~~ **CLOSED 2026-08-29.** `Installer.Core/DependencyInjection/AddInstaller()` assembles the graph; `Installer.Core/Pipeline/InstallerPipeline` drives verify → precheck → topology → install → checkpoint; `Installer.CLI` builds the host and maps outcomes to exit codes. **The product now runs end to end.** | Closed. See "F1 closure" below for the four defects the first execution exposed. | 12.x |
 | ~~**F2**~~ | ~~No loader for the canonical service map.~~ **CLOSED 2026-08-29.** `Installer.Actions/Topology/ServiceMapLoader` (YamlDotNet), 17 tests, two of them contract tests against the maps that ship. | Closed. The pipeline loads the topology before the first mutation, so a bad map fails while the machine is still clean. | 8.6, 8.7 |
 | ~~**F3**~~ | ~~No database bootstrap.~~ **CLOSED 2026-08-29** for install. `Installer.Actions/Database/MySqlBootstrapper` initialises the data directory, writes `my.ini`, sets the root password from a generated secret, creates the application and health-check accounts, imposes `stable_baseline_ddl.sql`, and **counts before and after**. Guarded by `TableNameCaseGuard`, which refuses outright where the estate's `lower_case_table_names=0` cannot be honoured. *(15.2 — the backup dump — is still a placeholder and is separate.)* | Closed for install. **The guard is where the runtime-target decision bites hardest — see below.** | 8.11, 15.2 |
+| **G25** | **No L2-R2 topology.** `ServicesOptions.Applications` is populated only in tests; the sample map carries 6 services; the estate is 27 (`l3_lob`, 2026-09-07). | The product cannot be described to the installer at all. `build/generate-topology.py` in L2-R2 emits the map from the same sources compose uses; `--check` in CI. | X7 |
+| **G26** | **Sibling URLs on a dev host.** 30–40 `APIKeys`/`ERPKeys` entries per module address `192.168.25.131`. Offline, each call is a 75 s timeout. | A node that installs, starts, looks healthy and cannot log in. The compose `api_key_overrides` rule, applied by `ConfigGenerator` into the file (ERPClient ignores its environment). | X8 |
+| **G27** | **TD-123 secrets in the medium.** 139 secret values in base `appsettings.json` would ship verbatim. | The media builder refuses a payload carrying a secret, using `config-hygiene.py`'s own rules so the two cannot drift. Rotation stays the owner's. | X9, 28.5 |
+| **G28** | **No society in an imposed baseline** — no COA, parameters, menus, users. Seeds need hand edits. | The node is born from a **carve-out**: a PacsId-scoped, signed, counted `.epdata` from the state instance (TD-168's 806-table classification, made a file with a guard). | X10 |
+| **G29** | **Business flows that cross the PACS boundary** have no offline path (CBS push rolls back; Aadhaar-OTP approvals; DCCB-approved DMS requests; SMS/e-mail). | ADR-0012: *pending-external*, carried in the ledger pack, decided above, returned in the policy pack. L2-R2-side cuts behind named switches. | X11 |
+| **G30** | **Half the repo targets a system that does not exist** — `Sync.Agent` DI throws at startup; heartbeat payload hardcoded `StateId="AP"`. | ADR-0011 freezes the stream; the pack exporter/applier is the buildable path. | X11 |
+| **G31** | **No health contract, still** — 0 of 27; neither agent hosts a listener. | `tcp` floor for all 27, `http` where a path exists, `HealthAggregator` (13.3). Owed to the estate: `MapErpHealth()`. | 13.3 |
+| **G32** | **No authoritative table count** — 1,255 / 1,226 / 1,298 / 1,264 depending on where you read. | The census gate reads one number, emitted by the baseline generator. | 8.11 |
 | ~~**F4**~~ | ~~No config templates.~~ **CLOSED 2026-08-29.** `ServicesOptions.Applications` is a keyed collection, so N services are expressible; `ConfigGenerator` addresses any of them as `${Service:<name>:Port}`; `packaging/config-templates/appsettings.Site.template.json` exists and is contract-tested. Unresolved tokens are now **fatal**. | Closed. **All four structural gaps are now closed** — see "F4 closure" below for the three defects it exposed. | 2.3, 2.8, 8.5 |
 
 ---
@@ -274,7 +292,7 @@ and the claim has to be updated with it — which is the point.
 - [~] 4. Create error catalog and error handling infrastructure
   - [x] 4.1 `packaging/error-catalog/installer.yaml`
   - [x] 4.2 `packaging/error-catalog/core.yaml`
-  - [ ] 4.3 Wire IErrorFactory and IErrorCatalog in DI — **`IInstallerErrorFactory` has no implementation, and there is no DI registration for the installer at all (F1).**
+  - [ ] 4.3 Wire IErrorFactory and IErrorCatalog in DI — **`IInstallerErrorFactory` still has no implementation.** *(The "no DI registration at all" half of this note went stale on 2026-08-29 when `AddInstaller()` landed; corrected 2026-09-13.)*
   - [x] 4.4 InstallerException subclasses — six subclasses present
 
 ---
@@ -326,7 +344,7 @@ and the claim has to be updated with it — which is the point.
 
 - [~] 9. Implement Installer.Actions — Uninstall
   - [x] 9.1 Stop in reverse order · [x] 9.2 Deregister · [x] 9.3 Binary removal · [x] 9.4 Data preserved by default
-  - [~] 9.5 Governance token verification for purge — **flow and typed-confirmation check are written, but `IOverrideTokenValidator` has no implementation, so `UninstallAction` cannot be constructed.**
+  - [~] 9.5 Governance token verification for purge — **flow and typed-confirmation check are written.** `DenyAllOverrideTokenValidator` (`Installer.Core/DependencyInjection/`) is the only implementation and refuses every token, deliberately, until real validation exists. *(The earlier note that `UninstallAction` cannot be constructed went stale on 2026-08-29; corrected 2026-09-13.)*
   - [ ] 9.6 Final support bundle before removal — **`UninstallAction` does not reference the collector.**
   - [ ] 9.7 Unit tests for uninstall flow and token verification
 
@@ -394,7 +412,7 @@ and the claim has to be updated with it — which is the point.
   - [x] 17.2 Upgrade path validation — extracted as the pure static `UpgradePath.Validate`, so the cheapest gate in the product is testable without constructing an engine that needs four collaborators. Refuses same-version; refuses **downgrade** (old code against a schema a newer migration already moved, and migrations do not run backwards — restore instead); enforces the manifest's declared window. 12 tests.
   - [x] 17.3 **Mandatory** pre-upgrade backup — not a flag, not a config value — and it is **verified** before the upgrade proceeds. A backup that was taken but cannot be read is not a way back.
   - [x] 17.4 Binary staging.
-  - [ ] 17.5 Schema migration runner — **still open, deliberately.** ADR-0005 chose DbUp; the estate's authority is `build/generate-state-migration.py`, and a DbUp corpus would give the estate two sources of schema truth. That needs an ADR superseding 0005 before code, not after.
+  - [ ] 17.5 Schema migration runner — **unblocked 2026-09-13 by ADR-0013**, which supersedes ADR-0005: the installer applies the estate's generated migration with its abort-first checks, fingerprints before and after, and counts. Was open, deliberately: ADR-0005 chose DbUp; the estate's authority is `build/generate-state-migration.py`, and a DbUp corpus would give the estate two sources of schema truth. That needs an ADR superseding 0005 before code, not after.
   - [x] **17.6 Junction flip — fixed.** Was delete-then-create; a power cut between the two left the node with **no `current` at all**, so nothing started and recovery could not find the release it was part-way through installing. Now: create the new link under a temporary name and `File.Move(overwrite: true)` over the old one, which on POSIX is `rename(2)` and atomic — **verified by experiment before being relied on**. Windows cannot rename over a directory reparse point, so there it falls back to delete-then-create, guarded by an **intent marker** flushed to the platter before either path runs and cleared only once the link is right. `TryCompleteInterruptedSwitchAsync` finishes the job on the next run; a marker whose target has vanished leaves `current` alone, because a complete older release beats no release. 10 tests.
   - [x] 17.7 Rollback — and it distinguishes what to undo. **Binaries always revert; the DATABASE only reverts when the schema was actually touched.** Restoring a database discards everything written since the backup, so doing it when migration never ran would destroy a day's counter transactions to undo a change that never happened. A rollback that itself fails reports both failures and says the node needs a person.
   - [x] 17.9 Tests.
@@ -427,24 +445,31 @@ and the claim has to be updated with it — which is the point.
 > repository. Confirm the programme exists and its timeline before spending further effort;
 > otherwise flag this phase off and keep `harness/` as a protocol rig only.
 
-- [~] 20. Implement Outbox Relay (MySQL → Kafka)
+> **FROZEN 2026-09-13 by ADR-0011 — §20, §21.4–21.8, §22, §23 as written.** The NLDR/Kafka
+> stream has no counterparty anywhere in the L2-R2 estate (Gate G1, unanswered since
+> 2026-08-29, now decided). Data leaves an offline node as signed, hash-chained, counted
+> **packs** to the state instance. The frozen classes stay in the tree, unregistered and marked,
+> so the question stays visible; the buildable work is X11 below. `Components:Sync:Mode=stream`
+> is refused with exit 4 naming ADR-0011.
+
+- [~] 20. Implement Outbox Relay (MySQL → Kafka) — **frozen, ADR-0011**
   - [x] 20.1 `IOutboxRelay` interface
   - [ ] 20.2–20.5 Poller, producer, Kafka-down handling, checkpoint — **`OutboxRelay.cs:36` is `// TODO: Actual MySQL query + Kafka publish implementation`. The class is a shell.**
   - [ ] 20.6 Unit tests
 
-- [~] 21. Implement Sync Agent
+- [~] 21. Implement Sync Agent — **21.4–21.8 frozen, ADR-0011; the connectivity state machine (21.1–21.3) is kept and reused by the pack exporter**
   - [x] 21.1 Connectivity state machine · [x] 21.2 HTTPS probe · [x] 21.3 Circuit breaker (threshold, half-open, cooldown)
   - [ ] 21.4 Chunked upload with per-chunk ACK — **`ISyncTransport` has zero implementations.**
   - [ ] 21.5 Bandwidth detection / adaptive chunk sizing — **config values exist; no logic.**
   - [ ] 21.6 Sync priority queue · [ ] 21.7 Dead-letter handling · [ ] 21.8 Durable MySQL checkpoint
   - [ ] 21.9 Unit tests for circuit breaker and retry
 
-- [~] 22. Implement Inbox Processing (NLDR → PACS)
+- [~] 22. Implement Inbox Processing (NLDR → PACS) — **frozen, ADR-0011; the policy-pack applier in X11 replaces it**
   - [x] 22.1 `IInboxProcessor` + implementation shell
   - [ ] 22.2 Idempotent apply · [ ] 22.3 Conflict resolution · [ ] 22.4 Command handler — **`InboxProcessor.cs:110` is `// TODO: Route to appropriate handler based on EventType`.**
   - [ ] 22.5 Unit tests
 
-- [ ] 23. Implement Reconciliation — **`IReconciliationEngine` declared; zero implementing types. 23.1–23.5 unimplemented.**
+- [ ] 23. Implement Reconciliation — **reframed by ADR-0011:** reconciliation is the state comparing ingested row counts with the node's next `watermark_from`; a disagreement is a drift finding in the estate's `live-*` vocabulary. `IReconciliationEngine` as declared stays unimplemented and frozen.
 
 ---
 
@@ -532,3 +557,38 @@ and the claim has to be updated with it — which is the point.
 - [ ] **X5. Register `l3_installer` in the workspace.** It is absent from
   `ops/l2r2 bootstrap clone` and from `Intellect.L2R2.sln`, so it is not part of the estate's
   build or CI.
+
+- [ ] **X7. One generated topology (G25, decision D1).** `build/generate-topology.py` in L2-R2
+  reads each module's `appsettings.json` and `ops/ansible/group_vars/all.yml` — the sources
+  `generate-compose.py` already reads, including its stray-root `.csproj`/`appsettings` traps —
+  and emits `topology/service-map.l2r2.yaml` plus `topology/appsettings.Applications.json` for
+  all 27 services. `--check` fails CI on a stale file. A contract test here loads the generated
+  map and asserts 27 entries with the start orders `group_vars` declares.
+
+- [ ] **X8. Re-point sibling URLs (G26).** `ConfigGenerator` rewrites every `APIKeys`/`ERPKeys`
+  URL whose port belongs to a service in the map to `127.0.0.1:<port>`, leaves genuinely
+  external hosts (eKYC, WebLand, the SMS gateway) untouched, strips `Iam:Authority` in the
+  offline profile, and writes the result into the file. Contract test: the generated
+  `appsettings.Site.json` for the 27 services equals compose's `api_key_overrides` result for
+  the same inputs.
+
+- [ ] **X9. The secret gate (G27, 28.5).** `epacs-media build` refuses a payload carrying a
+  secret — exit 2 naming the file and key, value masked — using the key pattern and allow-list
+  from `build/config-hygiene.py`. A test reads both and asserts they are equal, so the two
+  cannot drift. The publish script runs `config-hygiene.py redact` first.
+
+- [ ] **X10. The carve-out (G28).** L2-R2 side: `db/pacs-table-classification.json` (from
+  TD-168's `PacsId` analysis, with a guard that fails when a `PacsId`-carrying baseline table is
+  unclassified) and `l2r2 db carve-out --state ST --pacs ID` producing a signed, counted
+  `.epdata` in the ADR-0011 envelope. Installer side: `MySqlBootstrapper.LoadSiteDataAsync`
+  after the baseline, counted per table against the manifest; refuses an unsigned pack, a count
+  mismatch, or a `pacs_id` that is not the `.epcfg`'s.
+
+- [ ] **X11. Ledger and policy packs (G29, G30, ADR-0011/0012).** `Sync.Agent` re-shaped:
+  `LedgerPackExporter` (watermark from `AuditChain`, PacsId scope from the classification file,
+  CMS-signed, count manifest, hash-chained to the previous pack) and `PolicyPackApplier`
+  (signature before content, sequence and `prev_pack_hash` enforced, replay acknowledged and
+  not re-applied, counts after apply). The DI crash in `Program.cs` fixed; the heartbeat reads
+  its identity from `.epcfg`. `stream` mode refused with exit 4. The L2-R2-side cuts of
+  ADR-0012 (`CbsStatus=Queued`, `Approvals:AadhaarOtp:Required`, *pending-external*,
+  `DeferredJournalSink` adoption) are tracked in the estate, not here.

@@ -1,6 +1,6 @@
 # ADR-0005: DbUp for Schema Migrations
 
-**Status:** Accepted  
+**Status:** **Superseded by ADR-0013 (2026-09-13)** — the installer applies the estate's generated migration; DbUp would be a second source of schema truth  
 **Date:** 2025-11-01  
 **Deciders:** Architecture team
 

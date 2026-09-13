@@ -1,6 +1,6 @@
 # ADR-0006: Sync Abstraction Layer (Transactional Outbox + Kafka)
 
-**Status:** Accepted  
+**Status:** Accepted for the *connected* estate; **superseded for the offline node by ADR-0011 (2026-09-13)** — data leaves a node as signed packs, not a Kafka→NLDR stream  
 **Date:** 2025-12-01  
 **Deciders:** Architecture team
 

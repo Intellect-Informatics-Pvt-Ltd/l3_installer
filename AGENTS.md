@@ -298,7 +298,7 @@ Every code change in the harness must preserve these:
 | `src/Installer.Actions/Install/HarnessServiceMapLoader.cs` | Loads/filters harness service-map by group |
 | `src/Installer.Actions/Install/HarnessSmokeTest.cs` | Post-install health verification |
 | `src/Installer.CLI/Program.cs` | CLI entry point (/quiet, /config, /mode, /demo) |
-| `src/ManifestVerifier/ManifestVerificationService.cs` | Authenticode + SHA-256 verification |
+| `src/ManifestVerifier/ManifestVerificationService.cs` | Detached CMS + SHA-256 verification (Authenticode is unimplemented — `VerifyAuthenticode()` returns failure on every call) |
 
 ### Harness
 

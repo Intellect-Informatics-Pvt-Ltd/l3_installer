@@ -19,9 +19,19 @@
 > `stable_baseline_ddl.sql` and counts before and after; and **configuration** (F4) can describe
 > N application services rather than one. All four structural gaps are closed.
 >
-> What is still missing is substantial: there is no payload bundling, no bootstrapper, and no
-> upgrade, restore or repair engine. Those modes exit **4** with a message naming the missing
-> engine, rather than returning 0 as they used to.
+> Later the same day: the **media pipeline** (`epacs-media`, W6), **schema fingerprinting**, and
+> the **upgrade, restore and repair** engines (W7, §18) landed. Only Backup still exits **4**,
+> for want of package encryption (15.6); anything else that is missing exits 4 naming the
+> engine, never 0.
+>
+> **Reviewed 2026-09-13** as an enterprise-architecture pass, recorded in the L2-R2 workspace at
+> `docs/offline-installer-assessment-and-plan.md` §12. Verdict: *the chassis is real; the
+> adapter to the product is not* — the larger half of what remains is owed by the L2-R2 side
+> (no 27-service topology, sibling URLs on a dev host, TD-123 secrets in the medium, no society
+> in an imposed baseline, business flows that cross the PACS boundary). Four rulings:
+> **carve-out** as the data origin; **packs, not a stream** ([ADR-0011](docs/adr/ADR-0011-sync-is-a-pack-not-a-stream.md));
+> **approvals above the PACS deferred, never bypassed** ([ADR-0012](docs/adr/ADR-0012-approvals-above-the-pacs-are-deferred.md));
+> the migration runner applies the estate's migration ([ADR-0013](docs/adr/ADR-0013-migration-runner-applies-the-estates-migration.md)).
 >
 > **This README is hand-written.** `build/generate-module-readmes.py` in the L2-R2 workspace
 > excludes this repo (`NOT_MODULES`) because its generated prose — state branches, `r2-dev-stable`,
@@ -29,8 +39,9 @@
 > overwrote this file once, on 2026-08-29; the exclusion is what stops it happening again.
 > **[`.kiro/specs/epacs-offline-installer/tasks.md`](.kiro/specs/epacs-offline-installer/tasks.md)
 > carries a per-item audit** — what is built, what is partial, and what is not started — and is
-> the only place to trust for status. In particular: there is no WiX bootstrapper, no payload
-> build, no database bootstrap, and no upgrade, restore or repair engine.
+> the only place to trust for status. In particular: there is no WiX bootstrapper (and on
+> Debian none is needed — ADR-0009/0010), no ACL/firewall/service-account engine on either
+> platform, no health aggregator, and no backup encryption.
 >
 > `harness/` is a **deliberate stand-in payload**, not the product. It exists so the chassis can
 > be exercised before the real L2-R2 stack is pointed at it. `Pacs.Fas.Api` is a 435-line
