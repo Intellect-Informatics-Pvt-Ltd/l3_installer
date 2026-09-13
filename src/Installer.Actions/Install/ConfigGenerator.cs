@@ -116,30 +116,12 @@ public sealed partial class ConfigGenerator : IConfigGenerator
         // orchestrator came to leave those tokens unresolved.
         var map = InstallerTokenMap.BuildInfrastructure(opts, svc);
 
-        foreach (var (k, v) in new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            // Site identity, by the .epcfg's own JSON field names
-            ["epcfg:pacs_id"] = site.PacsId,
-            ["epcfg:state_code"] = site.StateCode,
-            ["epcfg:district_code"] = site.DistrictCode ?? "",
-            ["epcfg:language"] = site.Language,
-            ["epcfg:data_root"] = site.DataRoot,
-            ["epcfg:nldr_endpoint"] = site.NldrEndpoint ?? "",
-            ["epcfg:nldr_client_cert_thumbprint"] = site.NldrClientCertThumbprint ?? "",
-            ["epcfg:attachment_quota_gb"] = site.AttachmentQuotaGb.ToString(c),
-        })
+        // Site identity and site-supplied port overrides, from the shared vocabulary - the same
+        // map the orchestrators read, so ${epcfg:state_code} in a template and in a unit file
+        // cannot mean different things.
+        foreach (var (k, v) in InstallerTokenMap.BuildSite(site))
         {
             map[k] = v;
-        }
-
-        // Site-supplied port overrides. The .epcfg may pin ports for a site whose network
-        // already uses the defaults; when it does, it wins over the installer's own options.
-        if (site.Services is not null)
-        {
-            map["epcfg:services.mysql_port"] = site.Services.MysqlPort.ToString(c);
-            map["epcfg:services.cache_port"] = site.Services.CachePort.ToString(c);
-            map["epcfg:services.eventing_port"] = site.Services.EventingPort.ToString(c);
-            map["epcfg:services.web_https_port"] = site.Services.WebHttpsPort.ToString(c);
         }
 
         // ── The N application services ───────────────────────────────────────

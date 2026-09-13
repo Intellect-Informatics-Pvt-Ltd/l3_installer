@@ -42,17 +42,20 @@ public sealed class SystemdServiceOrchestrator : IServiceOrchestrator
     private readonly IOptions<InstallerOptions> _options;
     private readonly IOptions<ServicesOptions> _services;
     private readonly IProcessRunner _runner;
+    private readonly ISiteTokenSource _site;
     private readonly ILogger<SystemdServiceOrchestrator> _logger;
 
     public SystemdServiceOrchestrator(
         IOptions<InstallerOptions> options,
         IOptions<ServicesOptions> services,
         IProcessRunner runner,
+        ISiteTokenSource site,
         ILogger<SystemdServiceOrchestrator> logger)
     {
         _options = options;
         _services = services;
         _runner = runner;
+        _site = site;
         _logger = logger;
     }
 
@@ -162,7 +165,10 @@ public sealed class SystemdServiceOrchestrator : IServiceOrchestrator
 
     private string ResolveTokens(string input) =>
         InstallerTokenMap
-            .Resolve(input, InstallerTokenMap.BuildInfrastructure(_options.Value, _services.Value), "Service map entry")
+            .Resolve(
+                input,
+                InstallerTokenMap.Merge(InstallerTokenMap.BuildInfrastructure(_options.Value, _services.Value), _site.Tokens),
+                "Service map entry")
             // The service map is authored with Windows separators because that was the first
             // target. A unit file with backslashes in ExecStart fails at start with a path
             // nobody can read.

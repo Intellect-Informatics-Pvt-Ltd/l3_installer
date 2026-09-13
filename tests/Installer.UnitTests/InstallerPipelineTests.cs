@@ -39,10 +39,13 @@ public sealed class InstallerPipelineTests : IDisposable
     private readonly Mock<IUpgradeEngine> _upgrade = new();
     private readonly Mock<IRestoreEngine> _restore = new();
     private readonly Mock<IRepairEngine> _repair = new();
+    private readonly SiteTokenSource _siteTokens = new();
     private ComponentsOptions _componentsOptions = new();
     private readonly List<IPrecheck> _prechecks = [];
 
-    private InstallerOptions Options => new() { DataRoot = _dataRoot, BinaryRoot = Path.Combine(_dataRoot, "bin") };
+    private string? _siteConfigPath;
+
+    private InstallerOptions Options => new() { DataRoot = _dataRoot, BinaryRoot = Path.Combine(_dataRoot, "bin"), SiteConfigPath = _siteConfigPath };
 
     private InstallerPipeline Build()
     {
@@ -64,6 +67,7 @@ public sealed class InstallerPipelineTests : IDisposable
             _upgrade.Object,
             _restore.Object,
             _repair.Object,
+            _siteTokens,
             opts,
             Microsoft.Extensions.Options.Options.Create(_componentsOptions),
             NullLogger<InstallerPipeline>.Instance);
@@ -339,5 +343,35 @@ public sealed class InstallerPipelineTests : IDisposable
         public int Order => 1;
         public Task<PrecheckResult> ExecuteAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(new PrecheckResult { CheckId = id, Name = id, Severity = severity, Message = message });
+    }
+
+    [Fact]
+    public async Task Install_binds_the_site_tokens_and_keeps_the_site_pack_on_the_node()
+    {
+        // Two things every later operation depends on: the orchestrators can resolve
+        // ${epcfg:state_code} during THIS install, and repair/upgrade can find which PACS this is
+        // afterwards without being handed the stick again.
+        GivenVerificationSucceeds();
+        GivenConfigGenerates();
+        GivenDatabaseCanBootstrap();
+        GivenDatabaseExecutes();
+        GivenTopology(1);
+        Directory.CreateDirectory(_dataRoot);
+        var epcfg = Path.Combine(_dataRoot, "site-on-the-stick.epcfg");
+        File.WriteAllText(epcfg, "{\"pacs_id\":\"AP-XYZ-0001\"}");
+        _siteConfigPath = epcfg;
+        var stateSeenAtRegistration = "";
+        _services.Setup(s => s.RegisterAllAsync(It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<CancellationToken>()))
+                 .Callback(() => stateSeenAtRegistration = _siteTokens.Tokens.GetValueOrDefault("epcfg:state_code", ""))
+                 .Returns(Task.CompletedTask);
+
+        var result = await Build().RunAsync(new PipelineRequest { Mode = InstallerMode.Install, SiteConfig = Site, DryRun = false });
+
+        result.Outcome.Should().Be(PipelineOutcome.Success);
+        stateSeenAtRegistration.Should().Be("AP", "the site was bound before the first service was registered");
+        var kept = InstallerPipeline.InstalledSitePackPath(Options);
+        File.Exists(kept).Should().BeTrue();
+        File.ReadAllText(kept).Should().Be(File.ReadAllText(epcfg), "the kept copy is the signed original, byte for byte");
+        result.Steps.Should().Contain(s => s.Contains("site pack", StringComparison.OrdinalIgnoreCase));
     }
 }

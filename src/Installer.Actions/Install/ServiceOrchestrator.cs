@@ -14,15 +14,18 @@ public sealed class ServiceOrchestrator : IServiceOrchestrator
 {
     private readonly IOptions<InstallerOptions> _options;
     private readonly IOptions<ServicesOptions> _services;
+    private readonly ISiteTokenSource _site;
     private readonly ILogger<ServiceOrchestrator> _logger;
 
     public ServiceOrchestrator(
         IOptions<InstallerOptions> options,
         IOptions<ServicesOptions> services,
+        ISiteTokenSource site,
         ILogger<ServiceOrchestrator> logger)
     {
         _options = options;
         _services = services;
+        _site = site;
         _logger = logger;
     }
 
@@ -260,7 +263,7 @@ public sealed class ServiceOrchestrator : IServiceOrchestrator
     private string ResolveTokens(string input) =>
         InstallerTokenMap.Resolve(
             input,
-            InstallerTokenMap.BuildInfrastructure(_options.Value, _services.Value),
+            InstallerTokenMap.Merge(InstallerTokenMap.BuildInfrastructure(_options.Value, _services.Value), _site.Tokens),
             "Service map entry");
 
     private static Task<ScResult> RunScCommandAsync(string arguments, CancellationToken ct) =>

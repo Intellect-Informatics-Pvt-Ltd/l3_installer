@@ -132,6 +132,9 @@ public static class InstallerServiceCollectionExtensions
         services.AddSingleton<IPayloadExtractor, PayloadExtractor>();
         services.AddSingleton<IBinaryDeployer, BinaryDeployer>();
         services.AddSingleton<IConfigGenerator, ConfigGenerator>();
+        // Bound by whichever engine loads the .epcfg; read by the orchestrators so
+        // ${epcfg:state_code} resolves in a unit file as it does in a template.
+        services.AddSingleton<ISiteTokenSource, SiteTokenSource>();
         // PLATFORM SELECTION — ADR-0010.
         //
         // The only place in the product that branches on the operating system. Everything above

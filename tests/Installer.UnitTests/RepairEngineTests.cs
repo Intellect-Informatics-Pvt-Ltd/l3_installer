@@ -2,6 +2,7 @@ using FluentAssertions;
 using Installer.Actions.Install;
 using Installer.Actions.Topology;
 using Installer.Core.Repair;
+using Installer.Core.SiteConfig;
 using ManifestVerifier;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -56,9 +57,13 @@ public sealed class RepairEngineTests : IDisposable
         _binaries.Setup(b => b.ResolveCurrent()).Returns(Path.Combine(_root, "bin", "releases", "3.3.0"));
     }
 
+    private readonly Mock<ISiteConfigLoader> _siteLoader = new();
+    private readonly SiteTokenSource _siteTokens = new();
+
     private RepairEngine Build() => new(
         _verifier.Object, _serviceMap.Object, _payloads.Object, _binaries.Object,
         _config.Object, _services.Object,
+        _siteLoader.Object, _siteTokens,
         Options.Create(Opts), Options.Create(new ComponentsOptions()),
         NullLogger<RepairEngine>.Instance);
 
@@ -253,5 +258,74 @@ public sealed class RepairEngineTests : IDisposable
     public void Dispose()
     {
         if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
+    }
+
+    // ── Which PACS this is ───────────────────────────────────────────────────
+
+    private static ServiceMapEntry StateSelectingEntry() => new()
+    {
+        Name = "l3_FAS", DisplayName = "FAS", Executable = "${BinaryRoot}/current/dotnet/dotnet",
+        Arguments = "${BinaryRoot}/current/services/l3_FAS/FAS.dll", Account = "l2r2",
+        StartOrder = 120, StopOrder = 80,
+        HealthCheck = new ServiceHealthCheck { Type = "tcp", Host = "127.0.0.1", Port = "5010" },
+        Recovery = new ServiceRecovery
+        {
+            FirstFailure = new RecoveryAction { Action = "restart", DelaySeconds = 30 },
+            SecondFailure = new RecoveryAction { Action = "restart", DelaySeconds = 60 },
+            Subsequent = new RecoveryAction { Action = "restart", DelaySeconds = 120 }
+        },
+        Environment = new Dictionary<string, string>(StringComparer.Ordinal) { ["ASPNETCORE_ENVIRONMENT"] = "${epcfg:state_code}" }
+    };
+
+    [Fact]
+    public async Task Refuses_before_stopping_anything_when_the_map_needs_a_site_and_none_is_known()
+    {
+        // The generated L2-R2 topology puts ${epcfg:state_code} on all 27 application services.
+        // Re-registering them under a defaulted state would run the wrong configuration without
+        // failing - so the refusal comes BEFORE a service is stopped, and names the installed
+        // copy the operator can restore.
+        GivenTheReleaseIsOnDisk();
+        GivenConfigurationExists();
+        _serviceMap.Setup(m => m.LoadAsync(It.IsAny<string>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
+                   .ReturnsAsync([StateSelectingEntry()]);
+
+        var act = () => Build().RepairAsync(Request(dryRun: false));
+
+        var ex = await act.Should().ThrowAsync<RepairException>();
+        ex.Which.Message.Should().Contain("${epcfg:").And.Contain("site.epcfg").And.Contain("Nothing has been changed");
+        _services.Verify(s => s.StopAllAsync(It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<CancellationToken>()), Times.Never);
+        _services.Verify(s => s.RegisterAllAsync(It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Reads_the_installed_site_pack_when_no_config_is_given_and_binds_it()
+    {
+        GivenTheReleaseIsOnDisk();
+        GivenConfigurationExists();
+        var installed = Path.Combine(Opts.DataRoot, "config", "site.epcfg");
+        File.WriteAllText(installed, "{}");
+        _siteLoader.Setup(l => l.LoadAsync(installed, false, It.IsAny<CancellationToken>())).ReturnsAsync(Site);
+        _serviceMap.Setup(m => m.LoadAsync(It.IsAny<string>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
+                   .ReturnsAsync([StateSelectingEntry()]);
+
+        await Build().RepairAsync(Request(dryRun: false));
+
+        _siteLoader.Verify(l => l.LoadAsync(installed, false, It.IsAny<CancellationToken>()), Times.Once);
+        _siteTokens.Site.Should().NotBeNull();
+        _siteTokens.Tokens["epcfg:state_code"].Should().Be("AP");
+        _services.Verify(s => s.RegisterAllAsync(It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task A_config_on_the_command_line_wins_over_the_installed_copy()
+    {
+        GivenTheReleaseIsOnDisk();
+        GivenConfigurationExists();
+        File.WriteAllText(Path.Combine(Opts.DataRoot, "config", "site.epcfg"), "{}");
+
+        await Build().RepairAsync(Request(dryRun: false, site: Site));
+
+        _siteLoader.Verify(l => l.LoadAsync(It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+        _siteTokens.Tokens["epcfg:pacs_id"].Should().Be("AP-1");
     }
 }

@@ -46,6 +46,7 @@ public sealed class InstallerPipeline : IInstallerPipeline
     private readonly IUpgradeEngine _upgrade;
     private readonly IRestoreEngine _restore;
     private readonly IRepairEngine _repair;
+    private readonly ISiteTokenSource _siteTokens;
     private readonly IOptions<InstallerOptions> _options;
     private readonly IOptions<ComponentsOptions> _components;
     private readonly ILogger<InstallerPipeline> _logger;
@@ -75,6 +76,7 @@ public sealed class InstallerPipeline : IInstallerPipeline
         IUpgradeEngine upgrade,
         IRestoreEngine restore,
         IRepairEngine repair,
+        ISiteTokenSource siteTokens,
         IOptions<InstallerOptions> options,
         IOptions<ComponentsOptions> components,
         ILogger<InstallerPipeline> logger)
@@ -95,6 +97,7 @@ public sealed class InstallerPipeline : IInstallerPipeline
         _upgrade = upgrade;
         _restore = restore;
         _repair = repair;
+        _siteTokens = siteTokens;
         _options = options;
         _components = components;
         _logger = logger;
@@ -162,6 +165,36 @@ public sealed class InstallerPipeline : IInstallerPipeline
 
     // ── Install ──────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Keeps a copy of the signed <c>.epcfg</c> beside the generated configuration. Repair and
+    /// upgrade read it when no <c>--config</c> is given, because re-registering a service means
+    /// resolving <c>${epcfg:state_code}</c> again, and a node whose state is unknown must refuse
+    /// rather than register under a default. The copy is the signed original, byte for byte, so
+    /// the same signature check applies when it is read back.
+    /// </summary>
+    private static async Task<string?> PersistSitePackAsync(InstallerOptions opts, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(opts.SiteConfigPath) || !File.Exists(opts.SiteConfigPath))
+        {
+            return null;
+        }
+
+        var target = InstalledSitePackPath(opts);
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        await using (var source = File.OpenRead(opts.SiteConfigPath))
+        await using (var dest = File.Create(target))
+        {
+            await source.CopyToAsync(dest, ct);
+            await dest.FlushAsync(ct);
+        }
+
+        return target;
+    }
+
+    /// <summary>Where the install keeps the site pack: <c>&lt;DataRoot&gt;/config/site.epcfg</c>.</summary>
+    public static string InstalledSitePackPath(InstallerOptions opts) =>
+        Path.Combine(opts.DataRoot, "config", "site.epcfg");
+
     private async Task<PipelineResult> RunInstallAsync(
         PipelineRequest request, InstallerMode mode, List<string> steps, CancellationToken ct)
     {
@@ -172,6 +205,11 @@ public sealed class InstallerPipeline : IInstallerPipeline
         }
 
         var opts = _options.Value;
+
+        // The site's tokens reach the orchestrators through here. Bound before anything else
+        // so a service map carrying ${epcfg:state_code} - the generated L2-R2 topology does, on
+        // every application service - registers with the right state or not at all.
+        _siteTokens.Bind(request.SiteConfig);
 
         // ── Verify ───────────────────────────────────────────────────────────
         // Before anything touches the machine, and BEFORE the state machine exists.
@@ -301,6 +339,11 @@ public sealed class InstallerPipeline : IInstallerPipeline
             services,
             ct);
         steps.Add($"Generated {configResult.GeneratedFiles.Count} config file(s), {configResult.TokensResolved} token(s) resolved.");
+        var installedSitePack = await PersistSitePackAsync(opts, ct);
+        if (installedSitePack is not null)
+        {
+            steps.Add($"Kept the site pack at {installedSitePack} so repair and upgrade know which PACS this is.");
+        }
 
         await _stateMachine.TransitionAsync(InstallerPhase.Migrate, "database", cancellationToken: ct);
         var baselineDdl = Path.Combine(mediaDir, "db", "stable_baseline_ddl.sql");

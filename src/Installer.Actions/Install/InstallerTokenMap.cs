@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using SharedKernel.Configuration;
+using SharedKernel.Contracts;
 
 namespace Installer.Actions.Install;
 
@@ -57,6 +58,58 @@ public static partial class InstallerTokenMap
             ["Services:Sync:HealthPort"] = services.Sync.HealthPort.ToString(c),
             ["Services:Agent:HealthPort"] = services.Agent.HealthPort.ToString(c),
         };
+    }
+
+    /// <summary>
+    /// The site's own tokens, by the <c>.epcfg</c>'s own JSON field names. Shared by the config
+    /// generator and the service orchestrators (through <see cref="ISiteTokenSource"/>) so that
+    /// <c>${epcfg:state_code}</c> means the same thing in a template and in a unit file.
+    /// </summary>
+    public static Dictionary<string, string> BuildSite(SiteConfigPack site)
+    {
+        ArgumentNullException.ThrowIfNull(site);
+        var c = CultureInfo.InvariantCulture;
+
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["epcfg:pacs_id"] = site.PacsId,
+            ["epcfg:state_code"] = site.StateCode,
+            ["epcfg:district_code"] = site.DistrictCode ?? "",
+            ["epcfg:language"] = site.Language,
+            ["epcfg:data_root"] = site.DataRoot,
+            ["epcfg:nldr_endpoint"] = site.NldrEndpoint ?? "",
+            ["epcfg:nldr_client_cert_thumbprint"] = site.NldrClientCertThumbprint ?? "",
+            ["epcfg:attachment_quota_gb"] = site.AttachmentQuotaGb.ToString(c),
+        };
+
+        // Site-supplied port overrides. The .epcfg may pin ports for a site whose network
+        // already uses the defaults; when it does, it wins over the installer's own options.
+        if (site.Services is not null)
+        {
+            map["epcfg:services.mysql_port"] = site.Services.MysqlPort.ToString(c);
+            map["epcfg:services.cache_port"] = site.Services.CachePort.ToString(c);
+            map["epcfg:services.eventing_port"] = site.Services.EventingPort.ToString(c);
+            map["epcfg:services.web_https_port"] = site.Services.WebHttpsPort.ToString(c);
+        }
+
+        return map;
+    }
+
+    /// <summary>
+    /// Infrastructure plus site, for a consumer that has both. Site keys win on collision, which
+    /// cannot happen today (the prefixes differ) and is stated so it stays a decision.
+    /// </summary>
+    public static Dictionary<string, string> Merge(
+        IReadOnlyDictionary<string, string> infrastructure,
+        IReadOnlyDictionary<string, string> site)
+    {
+        var map = new Dictionary<string, string>(infrastructure, StringComparer.OrdinalIgnoreCase);
+        foreach (var (k, v) in site)
+        {
+            map[k] = v;
+        }
+
+        return map;
     }
 
     /// <summary>

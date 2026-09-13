@@ -1,9 +1,11 @@
 using Installer.Actions.Install;
 using Installer.Actions.Topology;
+using Installer.Core.SiteConfig;
 using ManifestVerifier;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Configuration;
+using SharedKernel.Contracts;
 
 namespace Installer.Core.Repair;
 
@@ -37,6 +39,8 @@ public sealed class RepairEngine : IRepairEngine
     private readonly IBinaryDeployer _binaries;
     private readonly IConfigGenerator _configGenerator;
     private readonly IServiceOrchestrator _services;
+    private readonly ISiteConfigLoader _siteConfigLoader;
+    private readonly ISiteTokenSource _siteTokens;
     private readonly IOptions<InstallerOptions> _options;
     private readonly IOptions<ComponentsOptions> _components;
     private readonly ILogger<RepairEngine> _logger;
@@ -48,10 +52,14 @@ public sealed class RepairEngine : IRepairEngine
         IBinaryDeployer binaries,
         IConfigGenerator configGenerator,
         IServiceOrchestrator services,
+        ISiteConfigLoader siteConfigLoader,
+        ISiteTokenSource siteTokens,
         IOptions<InstallerOptions> options,
         IOptions<ComponentsOptions> components,
         ILogger<RepairEngine> logger)
     {
+        _siteConfigLoader = siteConfigLoader;
+        _siteTokens = siteTokens;
         _manifestVerifier = manifestVerifier;
         _serviceMapLoader = serviceMapLoader;
         _payloads = payloads;
@@ -119,6 +127,24 @@ public sealed class RepairEngine : IRepairEngine
         var serviceMapPath = Path.Combine(mediaDir, opts.ServiceMapPath);
         var services = await _serviceMapLoader.LoadAsync(
             serviceMapPath, _components.Value.EnabledGroups(), cancellationToken);
+
+        // Which PACS this is: from --config if given, else from the copy the install kept. A map
+        // that names ${epcfg:...} on any service (the generated L2-R2 topology does, on all 27)
+        // cannot be re-registered without it - and that is decided HERE, before a service is
+        // stopped, so the refusal leaves the node exactly as it was found.
+        var site = request.SiteConfig ?? await LoadInstalledSitePackAsync(opts, cancellationToken);
+        if (site is not null)
+        {
+            _siteTokens.Bind(site);
+        }
+        else if (services.Any(ReferencesSiteTokens))
+        {
+            throw new RepairException(
+                "The service map references site tokens (${epcfg:...}) on at least one service, and neither " +
+                "--config=<path-to-.epcfg> was given nor is the installed copy present at " +
+                $"{Path.Combine(opts.DataRoot, "config", "site.epcfg")}. Re-registering without it would put the " +
+                "services under a defaulted state, which runs the wrong configuration without failing. Nothing has been changed.");
+        }
 
         var configDir = Path.Combine(opts.DataRoot, "config");
         var configMissing = !Directory.Exists(configDir)
@@ -209,4 +235,22 @@ public sealed class RepairEngine : IRepairEngine
             Message = $"Repaired {version}. The database, attachments and logs were not touched."
         };
     }
+
+    private async Task<SiteConfigPack?> LoadInstalledSitePackAsync(InstallerOptions opts, CancellationToken ct)
+    {
+        var path = Path.Combine(opts.DataRoot, "config", "site.epcfg");
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        // The installed copy is the signed original; it is verified exactly as the one on the
+        // medium was. An unsigned copy on the node is not trusted any more than one on a stick.
+        return await _siteConfigLoader.LoadAsync(path, allowUnsigned: false, ct);
+    }
+
+    private static bool ReferencesSiteTokens(ServiceMapEntry entry) =>
+        entry.Executable.Contains("${epcfg:", StringComparison.OrdinalIgnoreCase)
+        || (entry.Arguments?.Contains("${epcfg:", StringComparison.OrdinalIgnoreCase) ?? false)
+        || entry.Environment.Values.Any(v => v.Contains("${epcfg:", StringComparison.OrdinalIgnoreCase));
 }

@@ -1,0 +1,133 @@
+# ePACS infrastructure services on Windows - HAND-OWNED. build/generate-topology.py (L2-R2 workspace)
+# prepends these to the 27 discovered application services when it emits service-map.l2r2.windows.yaml.
+#
+# Groups: core (always), cache (Components:Cache:Enabled, default ON - the cache holds the
+# idempotency keys that stop a retried request posting twice), eventing (Components:Eventing:Enabled,
+# default OFF - nothing in the offline node's pack path uses Kafka; ADR-0003, ADR-0011).
+#
+# Accounts are local Windows service accounts. NOTHING CREATES THEM YET (tasks.md X1): registration
+# with `sc.exe obj=` fails on a clean machine until the Windows account provisioner exists.
+services:
+  - name: "ePACSMySQL"
+    display_name: "ePACS MySQL"
+    description: "MySQL 8.4 LTS database server for ePACS"
+    executable: "${BinaryRoot}\\current\\mysql\\bin\\mysqld.exe"
+    arguments: "--defaults-file=${DataRoot}\\mysql\\my.ini"
+    account: "ePACSDbSvc"
+    start_order: 10
+    stop_order: 90
+    startup_type: "Automatic"
+    group: "core"
+    health_check:
+      type: "command"
+      command: "${BinaryRoot}\\current\\mysql\\bin\\mysqladmin.exe"
+      arguments: "ping --host=127.0.0.1 --port=${Services:MySql:Port} --user=healthcheck"
+      timeout_seconds: 10
+      success_exit_code: 0
+    recovery:
+      first_failure: { action: "restart", delay_seconds: 60 }
+      second_failure: { action: "restart", delay_seconds: 120 }
+      subsequent: { action: "restart_and_bundle", delay_seconds: 300 }
+      reset_after_seconds: 86400
+    data_directories:
+      - "${DataRoot}\\mysql\\data"
+      - "${DataRoot}\\mysql\\logs"
+
+  # Garnet, verified against Redis 7.4.11 on 2026-08-29 (ADR-0002). `--lua` IS NOT OPTIONAL:
+  # without it ERPClient's rate limiter fails OPEN with one log line. See samples/service-map.yaml.
+  - name: "ePACSCache"
+    display_name: "ePACS Cache"
+    description: "Microsoft Garnet cache service for ePACS (Redis-protocol compatible)"
+    executable: "${BinaryRoot}\\current\\garnet\\GarnetServer.exe"
+    arguments: "--config ${DataRoot}\\config\\garnet.conf --lua"
+    account: "ePACSCacheSvc"
+    start_order: 20
+    stop_order: 80
+    startup_type: "Automatic"
+    group: "cache"
+    health_check:
+      type: "tcp"
+      host: "127.0.0.1"
+      port: "${Services:Cache:Port}"
+      timeout_seconds: 5
+    recovery:
+      first_failure: { action: "restart", delay_seconds: 30 }
+      second_failure: { action: "restart", delay_seconds: 60 }
+      subsequent: { action: "restart_and_bundle", delay_seconds: 120 }
+      reset_after_seconds: 86400
+    data_directories:
+      - "${DataRoot}\\cache"
+
+  - name: "ePACSEventing"
+    display_name: "ePACS Eventing"
+    description: "Apache Kafka KRaft single-node eventing for ePACS (optional; ADR-0003)"
+    executable: "${BinaryRoot}\\current\\jre\\bin\\java.exe"
+    arguments: "-Xmx512m -Xms256m -cp ${BinaryRoot}\\current\\kafka\\libs\\* kafka.Kafka ${DataRoot}\\config\\kafka.properties"
+    account: "ePACSEventSvc"
+    start_order: 30
+    stop_order: 70
+    startup_type: "Automatic"
+    group: "eventing"
+    health_check:
+      type: "tcp"
+      host: "127.0.0.1"
+      port: "${Services:Eventing:Port}"
+      timeout_seconds: 10
+    recovery:
+      first_failure: { action: "restart", delay_seconds: 60 }
+      second_failure: { action: "restart", delay_seconds: 120 }
+      subsequent: { action: "restart_and_bundle", delay_seconds: 300 }
+      reset_after_seconds: 86400
+    data_directories:
+      - "${DataRoot}\\eventing\\data"
+      - "${DataRoot}\\eventing\\logs"
+
+  # The pack exporter/applier (ADR-0011). Starts after every application service; stops first
+  # after the agent so an in-flight pack is finished before the database goes down.
+  - name: "ePACSSync"
+    display_name: "ePACS Sync Agent"
+    description: "Ledger-pack export and policy-pack apply (ADR-0011)"
+    executable: "${BinaryRoot}\\current\\dotnet\\dotnet.exe"
+    arguments: "${BinaryRoot}\\current\\sync\\Sync.Agent.dll"
+    account: "ePACSAppSvc"
+    start_order: 160
+    stop_order: 40
+    startup_type: "Automatic"
+    group: "core"
+    health_check:
+      type: "http"
+      url: "http://127.0.0.1:${Services:Sync:HealthPort}/health/live"
+      timeout_seconds: 10
+      expected_status: 200
+    recovery:
+      first_failure: { action: "restart", delay_seconds: 60 }
+      second_failure: { action: "restart", delay_seconds: 120 }
+      subsequent: { action: "restart_and_bundle", delay_seconds: 300 }
+      reset_after_seconds: 86400
+    data_directories:
+      - "${DataRoot}\\packs\\outbound"
+      - "${DataRoot}\\packs\\inbound"
+    environment:
+      ASPNETCORE_ENVIRONMENT: "${epcfg:state_code}"
+
+  - name: "ePACSInstallerAgent"
+    display_name: "ePACS Installer Agent"
+    description: "Always-on health monitoring, backup scheduling, and operational automation"
+    executable: "${BinaryRoot}\\current\\dotnet\\dotnet.exe"
+    arguments: "${BinaryRoot}\\current\\agent\\Installer.Agent.dll"
+    account: "LocalSystem"
+    start_order: 170
+    stop_order: 10
+    startup_type: "Automatic"
+    group: "core"
+    health_check:
+      type: "http"
+      url: "http://127.0.0.1:${Services:Agent:HealthPort}/health/live"
+      timeout_seconds: 5
+      expected_status: 200
+    recovery:
+      first_failure: { action: "restart", delay_seconds: 10 }
+      second_failure: { action: "restart", delay_seconds: 30 }
+      subsequent: { action: "restart", delay_seconds: 60 }
+      reset_after_seconds: 86400
+    data_directories: []
