@@ -7,6 +7,7 @@ using Installer.Actions.Topology;
 using Installer.Actions.Uninstall;
 using Installer.Core.StateMachine;
 using Installer.Core.Upgrade;
+using Installer.Core.Packs;
 using Installer.Core.Repair;
 using BackupRestore.Backup;
 using BackupRestore.Models;
@@ -16,6 +17,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Configuration;
 using SharedKernel.Contracts;
+using SharedKernel.Packs;
 using SharedKernel.Security;
 
 namespace Installer.Core.Pipeline;
@@ -58,6 +60,7 @@ public sealed class InstallerPipeline : IInstallerPipeline
     private readonly IFirewallManager _firewall;
     private readonly IHealthAggregator _health;
     private readonly IBackupEngine _backup;
+    private readonly IPolicyPackApplier _packs;
     private readonly IOptions<InstallerOptions> _options;
     private readonly IOptions<ComponentsOptions> _components;
     private readonly ILogger<InstallerPipeline> _logger;
@@ -94,6 +97,7 @@ public sealed class InstallerPipeline : IInstallerPipeline
         IFirewallManager firewall,
         IHealthAggregator health,
         IBackupEngine backup,
+        IPolicyPackApplier packs,
         IOptions<InstallerOptions> options,
         IOptions<ComponentsOptions> components,
         ILogger<InstallerPipeline> logger)
@@ -121,6 +125,7 @@ public sealed class InstallerPipeline : IInstallerPipeline
         _firewall = firewall;
         _health = health;
         _backup = backup;
+        _packs = packs;
         _options = options;
         _components = components;
         _logger = logger;
@@ -379,6 +384,30 @@ public sealed class InstallerPipeline : IInstallerPipeline
         var baselineDdl = Path.Combine(mediaDir, "db", "stable_baseline_ddl.sql");
         var dbResult = await _database.ExecuteAsync(baselineDdl, ct);
         steps.AddRange(dbResult.Steps.Select(x => $"database: {x}"));
+
+        // The society itself (G28). An imposed baseline is an ERP with no chart of accounts,
+        // parameters, menus, users or society; the site data pack is where those come from.
+        // The classification the pack was cut with travels on the medium and is kept beside
+        // the generated configuration for the sync agent, which reads the same file.
+        var classificationOnMedium = Path.Combine(mediaDir, "config", "pacs-table-classification.json");
+        if (File.Exists(classificationOnMedium))
+        {
+            var classificationTarget = Path.Combine(opts.DataRoot, "config", "pacs-table-classification.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(classificationTarget)!);
+            File.Copy(classificationOnMedium, classificationTarget, overwrite: true);
+        }
+
+        if (request.SiteDataPath is not null)
+        {
+            await _stateMachine.TransitionAsync(InstallerPhase.Migrate, "site-data", cancellationToken: ct);
+            var loaded = await _packs.ApplyAsync(request.SiteDataPath, PackType.SiteData, request.SiteConfig, ct);
+            var rows = loaded.Manifest.Tables.Sum(t => t.Rows);
+            steps.Add($"Loaded site data pack seq {loaded.Manifest.PackSeq} for {loaded.Manifest.PacsId}: {loaded.Manifest.Tables.Count} table(s), {rows} row(s), counted.");
+        }
+        else
+        {
+            steps.Add("No site data pack (--site-data) was given: the node has the schema and NO society - no chart of accounts, parameters, menus or users. Load one with a later --mode repair is not possible; re-run the install with --site-data, or apply it as the first policy pack.");
+        }
 
         // The node's facts go INTO each service's own appsettings.json - after the database
         // bootstrap, because the application password now exists, and before registration,

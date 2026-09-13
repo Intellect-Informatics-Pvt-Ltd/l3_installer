@@ -37,8 +37,16 @@ public sealed record PackManifest
     public string? WatermarkFrom { get; init; }
     public string? WatermarkTo { get; init; }
 
-    /// <summary>The schema the pack was cut against (MySqlSchemaFingerprinter). A pack is never applied across a different one.</summary>
+    /// <summary>The schema the pack was cut against. A pack is never applied across a different one.</summary>
     public required string SchemaFingerprint { get; init; }
+
+    /// <summary>
+    /// What <see cref="SchemaFingerprint"/> is: <c>live</c> (MySqlSchemaFingerprinter's rollup, for
+    /// packs between two installers) or <c>baseline-file-sha256</c> (the hash of
+    /// <c>db/stable_baseline_ddl.sql</c>, for a site data pack cut by the workspace tooling, which
+    /// the installer compares with the hash of the baseline it imposed).
+    /// </summary>
+    public string SchemaFingerprintKind { get; init; } = "live";
 
     public required DateTimeOffset ProducedAt { get; init; }
     public required string ProducerVersion { get; init; }

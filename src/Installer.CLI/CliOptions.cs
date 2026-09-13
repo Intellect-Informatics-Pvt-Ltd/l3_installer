@@ -30,6 +30,9 @@ internal sealed class CliOptions
 
     /// <summary>The backup to restore from. Required for --mode=restore; never guessed.</summary>
     public string? BackupPath { get; private set; }
+
+    /// <summary>Install only: the society's site data pack (.epdata) from the carve-out, loaded after the baseline.</summary>
+    public string? SiteDataPath { get; private set; }
     public string? OverrideToken { get; private set; }
     public string? TypedConfirmation { get; private set; }
 
@@ -79,6 +82,7 @@ internal sealed class CliOptions
             case "config": ConfigPath = value; return value is not null;
             case "media": MediaDirectory = value; return value is not null;
             case "backup": BackupPath = value; return value is not null;
+            case "site-data": SiteDataPath = value; return value is not null;
             case "override-token": OverrideToken = value; return value is not null;
             case "confirm": TypedConfirmation = value; return value is not null;
 
@@ -162,6 +166,11 @@ internal sealed class CliOptions
           --backup=<path>          Restore only. The backup package to restore from. Required:
                                    the installer will not guess which backup to overwrite this
                                    node's data with.
+          --site-data=<dir>        Install only. The society's site data pack (.epdata) cut by
+                                   `l2r2 db carve-out` on the state instance: loaded after the
+                                   baseline, verified (signature, PacsId, baseline hash), and
+                                   counted table by table. Without it the node has a schema and
+                                   no society - stated in the log, not hidden.
           --apply                  Perform the operation. Without it, nothing is changed.
           --quiet                  No console output (for unattended rollout).
           --verbose                Debug-level logging.

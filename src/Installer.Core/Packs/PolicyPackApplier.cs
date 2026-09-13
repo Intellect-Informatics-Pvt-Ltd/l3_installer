@@ -77,7 +77,25 @@ public sealed class PolicyPackApplier : IPolicyPackApplier
         var state = await ledger.LoadAsync(cancellationToken);
         var cursor = PackLedger.NextApplied(state, expectedType);
 
-        var fingerprint = await _fingerprinter.CaptureAsync(await _mysql.ConnectionStringAsync(cancellationToken), _mysql.DatabaseName, cancellationToken);
+        // What schema the pack must match. A site data pack is cut by the workspace tooling
+        // against the baseline FILE, so it is compared with the hash of the baseline this node
+        // imposed; packs between two installers carry the live fingerprint.
+        string expectedSchema;
+        if (expectedType == PackType.SiteData)
+        {
+            var baselineRecord = Path.Combine(_installer.Value.DataRoot, "installer", "baseline.sha256");
+            if (!File.Exists(baselineRecord))
+            {
+                throw new PackException(PackRefusal.Schema, $"{packDirectory}: this node has no record of the baseline it imposed ({baselineRecord}); the site data pack cannot be matched to a schema.");
+            }
+
+            expectedSchema = (await File.ReadAllTextAsync(baselineRecord, cancellationToken)).Trim();
+        }
+        else
+        {
+            var fingerprint = await _fingerprinter.CaptureAsync(await _mysql.ConnectionStringAsync(cancellationToken), _mysql.DatabaseName, cancellationToken);
+            expectedSchema = fingerprint.FingerprintHash;
+        }
 
         var manifest = await PackEnvelope.ReadAndVerifyAsync(
             packDirectory,
@@ -87,7 +105,7 @@ public sealed class PolicyPackApplier : IPolicyPackApplier
             site.PacsId,
             cursor.LastSeq + 1,
             cursor.LastHash,
-            fingerprint.FingerprintHash,
+            expectedSchema,
             cancellationToken);
 
         if (manifest.PackType != expectedType)

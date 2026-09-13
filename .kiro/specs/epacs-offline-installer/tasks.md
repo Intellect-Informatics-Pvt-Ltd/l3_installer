@@ -577,7 +577,7 @@ and the claim has to be updated with it — which is the point.
   from `build/config-hygiene.py`. A test reads both and asserts they are equal, so the two
   cannot drift. The publish script runs `config-hygiene.py redact` first.
 
-- [ ] **X10. The carve-out (G28).** L2-R2 side: `db/pacs-table-classification.json` (from
+- [x] **X10. The carve-out (G28).** *Done 2026-09-13:* workspace `build/generate-table-classification.py` → `db/pacs-table-classification.json` (838 society / 397 master / 20 excluded of 1,255; a guard in CI; the 397 carry a stated caveat), `ops/l2r2 db carve-out` (counts first, per-table mysqldump, the ADR-0011 envelope, CMS-signed by openssl). Installer: `--site-data=<dir>` loads it after the baseline through `PolicyPackApplier` as `PackType.SiteData`, matched to the hash of the baseline the node imposed (`<DataRoot>/installer/baseline.sha256`, written by the bootstrapper), counted per table; without it the log says the node has a schema and NO society. Original scope: L2-R2 side: `db/pacs-table-classification.json` (from
   TD-168's `PacsId` analysis, with a guard that fails when a `PacsId`-carrying baseline table is
   unclassified) and `l2r2 db carve-out --state ST --pacs ID` producing a signed, counted
   `.epdata` in the ADR-0011 envelope. Installer side: `MySqlBootstrapper.LoadSiteDataAsync`

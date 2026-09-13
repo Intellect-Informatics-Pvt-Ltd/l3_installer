@@ -33,6 +33,9 @@ public sealed record PipelineRequest
     /// <summary>The backup to restore from. Required for Restore; the installer will not guess.</summary>
     public string? BackupPath { get; init; }
 
+    /// <summary>Install: the society's site data pack (.epdata), loaded after the baseline. Optional; its absence is stated.</summary>
+    public string? SiteDataPath { get; init; }
+
     /// <summary>Repair: regenerate configuration even when it looks intact. Discards hand edits.</summary>
     public bool RegenerateConfiguration { get; init; }
 

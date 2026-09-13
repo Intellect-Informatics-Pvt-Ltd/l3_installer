@@ -214,6 +214,14 @@ public sealed class MySqlBootstrapper : IDatabaseBootstrapper
                 $"against this database. Check the MySQL error log at {Path.Combine(Expand(My.LogDir), "mysql-error.log")}.");
         }
 
+        // Record WHICH baseline landed - the hash of the file - so a site data pack cut by the
+        // workspace tooling for that baseline can be matched to it (ADR-0011: SiteData packs
+        // carry the baseline file's hash as their schema fingerprint).
+        var record = Path.Combine(DataRoot, "installer", "baseline.sha256");
+        Directory.CreateDirectory(Path.GetDirectoryName(record)!);
+        await File.WriteAllTextAsync(record, await HashFileAsync(baselineDdlPath, cancellationToken) + "\n", cancellationToken);
+        steps.Add($"Recorded the imposed baseline's hash at {record}.");
+
         LogEvents.BaselineImposed(_logger, My.DatabaseName, before, after);
         return new DatabaseBootstrapResult
         {
@@ -223,6 +231,12 @@ public sealed class MySqlBootstrapper : IDatabaseBootstrapper
             Steps = steps,
             Message = $"Database ready: {after} tables in {My.DatabaseName}."
         };
+    }
+
+    private static async Task<string> HashFileAsync(string path, CancellationToken ct)
+    {
+        await using var stream = File.OpenRead(path);
+        return Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(stream, ct)).ToLowerInvariant();
     }
 
     /// <summary>

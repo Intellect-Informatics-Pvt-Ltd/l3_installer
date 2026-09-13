@@ -261,6 +261,9 @@ public sealed class PackEnginesTests : IDisposable
     public async Task Site_data_is_the_zeroth_policy_pack_and_lands_a_society_from_nothing()
     {
         _db.Rows.Clear();
+        // A site data pack is matched to the BASELINE FILE the node imposed, not the live fingerprint.
+        Directory.CreateDirectory(Path.Combine(_root, "data", "installer"));
+        File.WriteAllText(Path.Combine(_root, "data", "installer", "baseline.sha256"), "baseline-hash-1\n");
         var dir = Path.Combine(_root, "epdata");
         Directory.CreateDirectory(Path.Combine(dir, "data"));
         File.WriteAllText(Path.Combine(dir, "data", "mem_member.sql"), "REPLACE INTO mem_member VALUES ('GJ-0001','m1'),('GJ-0001','m2');\n");
@@ -268,7 +271,8 @@ public sealed class PackEnginesTests : IDisposable
         await PackEnvelope.WriteAsync(dir, new PackManifest
         {
             PacsId = "GJ-0001", State = "GJ", PackType = PackType.SiteData, PackSeq = 1, PrevPackHash = PackManifest.Genesis,
-            SchemaFingerprint = "schema-A", ProducedAt = DateTimeOffset.UnixEpoch, ProducerVersion = "carve-out", Tables = []
+            SchemaFingerprint = "baseline-hash-1", SchemaFingerprintKind = "baseline-file-sha256",
+            ProducedAt = DateTimeOffset.UnixEpoch, ProducerVersion = "carve-out", Tables = []
         }, new Dictionary<string, long> { ["mem_member"] = 2, ["cm_state"] = 1 }, new CmsCodeSigner(() => _stateCert), null);
 
         var result = await Applier().ApplyAsync(dir, PackType.SiteData, Site);
@@ -276,6 +280,28 @@ public sealed class PackEnginesTests : IDisposable
         result.CountsAfter["mem_member"].Should().Be(2);
         result.CountsAfter["cm_state"].Should().Be(1);
         _db.Rows["mem_member"].Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task A_site_data_pack_cut_for_another_baseline_is_refused_and_a_node_with_no_record_cannot_match_one()
+    {
+        var dir = Path.Combine(_root, "epdata2");
+        Directory.CreateDirectory(Path.Combine(dir, "data"));
+        File.WriteAllText(Path.Combine(dir, "data", "cm_state.sql"), "REPLACE INTO cm_state VALUES ('','GJ');\n");
+        await PackEnvelope.WriteAsync(dir, new PackManifest
+        {
+            PacsId = "GJ-0001", State = "GJ", PackType = PackType.SiteData, PackSeq = 1, PrevPackHash = PackManifest.Genesis,
+            SchemaFingerprint = "baseline-hash-OLD", SchemaFingerprintKind = "baseline-file-sha256",
+            ProducedAt = DateTimeOffset.UnixEpoch, ProducerVersion = "carve-out", Tables = []
+        }, new Dictionary<string, long> { ["cm_state"] = 1 }, new CmsCodeSigner(() => _stateCert), null);
+
+        var noRecord = () => Applier().ApplyAsync(dir, PackType.SiteData, Site);
+        (await noRecord.Should().ThrowAsync<PackException>()).Which.Refusal.Should().Be(PackRefusal.Schema);
+
+        Directory.CreateDirectory(Path.Combine(_root, "data", "installer"));
+        File.WriteAllText(Path.Combine(_root, "data", "installer", "baseline.sha256"), "baseline-hash-NEW\n");
+        var wrongBaseline = () => Applier().ApplyAsync(dir, PackType.SiteData, Site);
+        (await wrongBaseline.Should().ThrowAsync<PackException>()).Which.Message.Should().Contain("Upgrade first");
     }
 
     public void Dispose()

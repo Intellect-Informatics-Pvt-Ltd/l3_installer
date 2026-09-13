@@ -3,6 +3,8 @@ using Installer.Actions.Platform;
 using SharedKernel.Security;
 using BackupRestore.Backup;
 using BackupRestore.Models;
+using Installer.Core.Packs;
+using SharedKernel.Packs;
 using FluentAssertions;
 using Installer.Actions.Database;
 using Installer.Core.Upgrade;
@@ -51,6 +53,7 @@ public sealed class InstallerPipelineTests : IDisposable
     private readonly Mock<IFirewallManager> _firewall = new();
     private readonly Mock<IHealthAggregator> _health = new();
     private readonly Mock<IBackupEngine> _backup = new();
+    private readonly Mock<IPolicyPackApplier> _packs = new();
     private ComponentsOptions _componentsOptions = new();
     private readonly List<IPrecheck> _prechecks = [];
 
@@ -92,7 +95,7 @@ public sealed class InstallerPipelineTests : IDisposable
             _repair.Object,
             _siteTokens,
             _payloadConfig.Object,
-            _accounts.Object, _acl.Object, _firewall.Object, _health.Object, _backup.Object,
+            _accounts.Object, _acl.Object, _firewall.Object, _health.Object, _backup.Object, _packs.Object,
             opts,
             Microsoft.Extensions.Options.Options.Create(_componentsOptions),
             NullLogger<InstallerPipeline>.Instance);
@@ -519,5 +522,37 @@ public sealed class InstallerPipelineTests : IDisposable
         result.Message.Should().Contain("tasks.md X1");
         _services.Verify(s => s.RegisterAllAsync(It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<CancellationToken>()), Times.Never,
             "services are never registered on a node with no least-privilege boundary");
+    }
+
+    [Fact]
+    public async Task Install_loads_the_site_data_pack_after_the_baseline_and_says_so_when_there_is_none()
+    {
+        GivenVerificationSucceeds();
+        GivenConfigGenerates();
+        GivenDatabaseCanBootstrap();
+        GivenDatabaseExecutes();
+        GivenTopology(1);
+        var order = new List<string>();
+        _database.Setup(d => d.ExecuteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                 .Callback(() => order.Add("baseline"))
+                 .ReturnsAsync(new DatabaseBootstrapResult { Succeeded = true, TablesBefore = 0, TablesAfter = 1255, Steps = [], Message = "ok" });
+        _packs.Setup(p => p.ApplyAsync("/stick/GJ-0001.epdata", PackType.SiteData, It.IsAny<SiteConfigPack>(), It.IsAny<CancellationToken>()))
+              .Callback(() => order.Add("site-data"))
+              .ReturnsAsync(new PackApplyResult(new PackManifest
+              {
+                  PacsId = "AP-XYZ-0001", State = "AP", PackType = PackType.SiteData, PackSeq = 1, PrevPackHash = PackManifest.Genesis,
+                  SchemaFingerprint = "x", ProducedAt = DateTimeOffset.UnixEpoch, ProducerVersion = "t",
+                  Tables = [new PackTable { Table = "mem_member", File = "mem_member.sql", Rows = 212, Sha256 = "h", SizeBytes = 1 }]
+              }, new Dictionary<string, long> { ["mem_member"] = 212 }));
+        _services.Setup(s => s.RegisterAllAsync(It.IsAny<IReadOnlyList<ServiceMapEntry>>(), It.IsAny<CancellationToken>())).Callback(() => order.Add("register")).Returns(Task.CompletedTask);
+
+        var with = await Build().RunAsync(new PipelineRequest { Mode = InstallerMode.Install, SiteConfig = Site, DryRun = false, SiteDataPath = "/stick/GJ-0001.epdata" });
+
+        with.Outcome.Should().Be(PipelineOutcome.Success);
+        order.Should().ContainInOrder("baseline", "site-data", "register");
+        with.Steps.Should().Contain(s => s.Contains("Loaded site data pack seq 1") && s.Contains("212 row(s)"));
+
+        var without = await Build().RunAsync(new PipelineRequest { Mode = InstallerMode.Install, SiteConfig = Site, DryRun = false });
+        without.Steps.Should().Contain(s => s.Contains("NO society"));
     }
 }

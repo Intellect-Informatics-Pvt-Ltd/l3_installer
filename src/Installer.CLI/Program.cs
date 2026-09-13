@@ -74,6 +74,7 @@ public static class Program
                 SiteConfig = siteConfig,
                 MediaDirectory = options.MediaDirectory,
                 BackupPath = options.BackupPath,
+                SiteDataPath = options.SiteDataPath,
                 RegenerateConfiguration = options.RegenerateConfiguration,
                 ReplaceBinaries = options.ReplaceBinaries,
                 PurgeData = options.PurgeData,
