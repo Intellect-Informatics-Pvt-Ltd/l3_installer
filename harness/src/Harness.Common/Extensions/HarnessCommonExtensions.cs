@@ -30,6 +30,9 @@ public static class HarnessCommonExtensions
         services.Configure<NldrOptions>(o => configuration.GetSection(NldrOptions.SectionName).Bind(o));
         services.Configure<UiOptions>(o => configuration.GetSection(UiOptions.SectionName).Bind(o));
 
+        // Dapper cannot bind DateOnly on its own (the voucher date) - see DateOnlyTypeHandler.
+        DapperTypeHandlers.Register();
+
         // Clock — can be overridden in tests by replacing with OffsetClock
         services.AddSingleton<IClock, SystemClock>();
 

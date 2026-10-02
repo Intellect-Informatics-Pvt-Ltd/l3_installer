@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Run settings for Harness.IntegrationTests, named by the csproj's RunSettingsFilePath.
+
+  The csproj has pointed at this file since the project was created, and the file was never
+  committed: VSTest refused to start ("The Settings file ... could not be found") and the project
+  ran ZERO tests on every run, CI's included. Created 2026-10-02.
+
+  What it settles, and why:
+  - DisableParallelization: one test class starts five containers (two MySQL 8.4, Kafka, two
+    Redis). Running classes in parallel multiplies that inside a podman VM of 4 GiB.
+  - TestSessionTimeout: pulling cp-kafka and mysql on a cold machine takes minutes; the session
+    is bounded at 20 so a container that never becomes ready fails the run instead of hanging it.
+  - TESTCONTAINERS_RYUK_DISABLED is NOT set here: on CI with real Docker the reaper is wanted.
+    On a Mac with podman, export TESTCONTAINERS_RYUK_DISABLED=true before running (the reaper
+    cannot start under podman) - see the platform repo's ops/README.md.
+
+  This file does not exclude these tests from quick runs; nothing ever did. They carry
+  [Trait("Category", "Integration")], so a quick run passes the test filter
+      Category!=Integration
+  (an XML comment cannot hold a double hyphen, so the option itself is not spelled out here).
+-->
+<RunSettings>
+  <RunConfiguration>
+    <DisableParallelization>true</DisableParallelization>
+    <TestSessionTimeout>1200000</TestSessionTimeout>
+  </RunConfiguration>
+</RunSettings>

@@ -303,7 +303,9 @@ curl -s http://localhost:5201/api/test/state | jq .
 # Contract tests (no Docker needed, < 1 second)
 dotnet test tests/Harness.ContractTests/Harness.ContractTests.csproj
 
-# Integration tests (Docker required, ~30 seconds)
+# Integration tests (a container runtime required; ~30 s warm, minutes on a cold image cache)
+# On a Mac with podman the Testcontainers reaper cannot start - turn it off first:
+#   export TESTCONTAINERS_RYUK_DISABLED=true
 dotnet test tests/Harness.IntegrationTests/Harness.IntegrationTests.csproj
 ```
 

@@ -153,7 +153,7 @@ Render the evidence pack from any TRX:
 python3 build/installer-test-evidence.py artifacts/test-results/installer.trx > docs/testing/installer-evidence.md
 ```
 
-Then the harness, if you need it: `cd harness && dotnet build ePACS.SyncHarness.sln && dotnet test tests/Harness.ContractTests` (15 tests).
+Then the harness, if you need it: `cd harness && dotnet build ePACS.SyncHarness.sln && dotnet test tests/Harness.ContractTests` (16 tests).
 
 ---
 
@@ -735,11 +735,18 @@ not the product; ADR-0011 froze the stream it models.
 cd harness
 docker compose -f docker/docker-compose.minimal.yml up -d     # Kafka + MySQL ×2 + Redis ×2
 dotnet run --project src/Pacs.Fas.Api                        # :5101
-dotnet test tests/Harness.ContractTests                       # 15 tests
+dotnet test tests/Harness.ContractTests                       # 16 tests
 ```
 
-`docs/test-harness/TESTERS-README.md` is its tester guide; `Harness.IntegrationTests`,
-`Harness.ChaosTests` and `Harness.LongOfflineTests` are scaffolding with no facts yet.
+`docs/test-harness/TESTERS-README.md` is its tester guide. `Harness.IntegrationTests` holds ONE
+end-to-end test (HappyPath: a voucher created on PACS, ingested at NLDR, ACKed) against real MySQL 8.4,
+Kafka and Redis containers. It first ran on 2026-10-02 - until then its run-settings file was missing
+and VSTest refused to start - and that first run surfaced five defects on the path, all fixed then: a
+migration splitter that cut `--` comments at their `;`, an 8.x TestHost under net10.0, Dapper unable to
+bind the voucher's `DateOnly`, a voucher payload whose fields were half PascalCase (so NLDR read a NULL
+`voucher_no`), and no `sync_inbox` table in the NLDR schema. Under podman, export
+`TESTCONTAINERS_RYUK_DISABLED=true` first. `Harness.ChaosTests` and `Harness.LongOfflineTests` are
+still empty scaffolds: the power-cut matrix and the 30-day soak are owed, not broken.
 
 ---
 

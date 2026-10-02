@@ -63,17 +63,23 @@ public sealed class VoucherService(
             }
 
             // ── Step 5-6: Compute hash + allocate sequence_no ─────────────────
+            // Every member NAMED, in camelCase. An anonymous object takes a projected member's name as
+            // written - `request.VoucherNo` serialises as "VoucherNo" - while the locals above came out as
+            // "voucherId"/"pacsId". Nldr.Api reads the payload case-sensitively by the camelCase names
+            // (NldrIngestRepository: "voucherNo", "voucherDate", "voucherType", "totalAmount"), so every
+            // synced voucher reached NLDR with a NULL voucher_no and the ingest failed on its NOT NULL
+            // column. Found 2026-10-02 by the first run of Harness.IntegrationTests (HappyPath).
             var afterState = new
             {
                 voucherId,
                 pacsId,
-                request.VoucherNo,
-                request.VoucherDate,
-                request.VoucherType,
-                request.Narration,
+                voucherNo   = request.VoucherNo,
+                voucherDate = request.VoucherDate,
+                voucherType = request.VoucherType,
+                narration   = request.Narration,
                 totalAmount,
-                status = "POSTED",
-                request.CreatedBy
+                status      = "POSTED",
+                createdBy   = request.CreatedBy
             };
 
             var seqNo = await SequenceAllocator.GetNextAsync(
