@@ -41,14 +41,14 @@
         "BorrowingsUrl": "http://127.0.0.1:5024/api/v1/",
         "InvestmentsUrl": "http://127.0.0.1:5025/api/v1/",
         "AgentComponentUrl": "http://127.0.0.1:5026/api/v1/",
-        "UIUrl": "http://127.0.0.1:5036/api/v1/",
+        "UIUrl": "http://127.0.0.1:1/",
         "_apiUrl": "http://127.0.0.1:5037/api/v1/",
         "BulkIntrestPostingURL": "http://127.0.0.1:1/",
         "HrmsUrl": "http://127.0.0.1:5033/api/v1/",
         "CrossOrigin": "http://127.0.0.1:5000/",
         "DMSUrl": "http://127.0.0.1:5037/api/v1/",
         "BioGasComponentUrl": "http://127.0.0.1:1/",
-        "AasamiUrl": "http://127.0.0.1:5036/api/v1/",
+        "AasamiUrl": "http://127.0.0.1:7036/api/v1/",
         "LobUrl": "http://127.0.0.1:5038/api/v1/"
       }
     },
@@ -82,7 +82,7 @@
         "InvestmentsUrl": "http://127.0.0.1:5025/api/v1/",
         "AgentComponentUrl": "http://127.0.0.1:5026/api/v1/",
         "HrmsUrl": "http://127.0.0.1:5033/api/v1/",
-        "UIUrl": "http://127.0.0.1:5036/api/v1/",
+        "UIUrl": "http://127.0.0.1:1/",
         "_apiUrl": "http://127.0.0.1:5037/api/v1/"
       }
     },
@@ -116,7 +116,7 @@
         "InvestmentsUrl": "http://127.0.0.1:5025/api/v1/",
         "AgentComponentUrl": "http://127.0.0.1:5026/api/v1/",
         "HrmsUrl": "http://127.0.0.1:5033/api/v1/",
-        "UIUrl": "http://127.0.0.1:5036/api/v1/",
+        "UIUrl": "http://127.0.0.1:1/",
         "_apiUrl": "http://127.0.0.1:5037/api/v1/"
       }
     },
@@ -150,7 +150,7 @@
         "InvestmentsUrl": "http://127.0.0.1:5025/api/v1/",
         "AgentComponentUrl": "http://127.0.0.1:5026/api/v1/",
         "HrmsUrl": "http://127.0.0.1:5033/api/v1/",
-        "UIUrl": "http://127.0.0.1:5036/api/v1/",
+        "UIUrl": "http://127.0.0.1:1/",
         "_apiUrl": "http://127.0.0.1:5037/api/v1/"
       }
     },
@@ -180,7 +180,7 @@
         "SavingsUrl": "http://127.0.0.1:5006/api/v1/",
         "TermUrl": "http://127.0.0.1:5008/api/v1/",
         "ThriftUrl": "http://127.0.0.1:1/",
-        "UIUrl": "http://127.0.0.1:5036/api/v1/",
+        "UIUrl": "http://127.0.0.1:1/",
         "UniteCommonAPIUrl": "http://127.0.0.1:5003/api/v1/",
         "UsermanagementUrl": "http://127.0.0.1:5004/api/v1/",
         "VoucherProcessingUrl": "http://127.0.0.1:5010/api/v1/",
@@ -218,7 +218,7 @@
         "InvestmentsUrl": "http://127.0.0.1:5025/api/v1/",
         "AgentComponentUrl": "http://127.0.0.1:5026/api/v1/",
         "HrmsUrl": "http://127.0.0.1:5033/api/v1/",
-        "UIUrl": "http://127.0.0.1:5036/api/v1/",
+        "UIUrl": "http://127.0.0.1:1/",
         "_apiUrl": "http://127.0.0.1:5037/api/v1/"
       }
     },
@@ -252,7 +252,7 @@
         "InvestmentsUrl": "http://127.0.0.1:5025/api/v1/",
         "AgentComponentUrl": "http://127.0.0.1:5026/api/v1/",
         "HrmsUrl": "http://127.0.0.1:5033/api/v1/",
-        "UIUrl": "http://127.0.0.1:5036/api/v1/",
+        "UIUrl": "http://127.0.0.1:1/",
         "_apiUrl": "http://127.0.0.1:5037/api/v1/"
       }
     },
@@ -294,7 +294,7 @@
         "InvestmentsUrl": "http://127.0.0.1:5025/api/v1/",
         "AgentComponentUrl": "http://127.0.0.1:5026/api/v1/",
         "HrmsUrl": "http://127.0.0.1:5033/api/v1/",
-        "UIUrl": "http://127.0.0.1:5036/api/v1/",
+        "UIUrl": "http://127.0.0.1:1/",
         "_apiUrl": "http://127.0.0.1:5037/api/v1/"
       }
     },
@@ -328,7 +328,7 @@
         "InvestmentsUrl": "http://127.0.0.1:5025/api/v1/",
         "AgentComponentUrl": "http://127.0.0.1:5026/api/v1/",
         "HrmsUrl": "http://127.0.0.1:5033/api/v1/",
-        "UIUrl": "http://127.0.0.1:5036/api/v1/",
+        "UIUrl": "http://127.0.0.1:1/",
         "_apiUrl": "http://127.0.0.1:5037/api/v1/"
       }
     },
@@ -362,7 +362,7 @@
         "InvestmentsUrl": "http://127.0.0.1:5025/api/v1/",
         "AgentComponentUrl": "http://127.0.0.1:5026/api/v1/",
         "HrmsUrl": "http://127.0.0.1:5033/api/v1/",
-        "UIUrl": "http://127.0.0.1:5036/api/v1/"
+        "UIUrl": "http://127.0.0.1:1/"
       }
     },
     "l3_borrowings": {
@@ -395,7 +395,7 @@
         "InvestmentsUrl": "http://127.0.0.1:5025/api/v1/",
         "AgentComponentUrl": "http://127.0.0.1:5026/api/v1/",
         "HrmsUrl": "http://127.0.0.1:5033/api/v1/",
-        "UIUrl": "http://127.0.0.1:5036/api/v1/",
+        "UIUrl": "http://127.0.0.1:1/",
         "_apiUrl": "http://127.0.0.1:5037/api/v1/"
       }
     },
@@ -429,7 +429,7 @@
         "InvestmentsUrl": "http://127.0.0.1:5025/api/v1/",
         "AgentComponentUrl": "http://127.0.0.1:5026/api/v1/",
         "HrmsUrl": "http://127.0.0.1:5033/api/v1/",
-        "UIUrl": "http://127.0.0.1:5036/api/v1/",
+        "UIUrl": "http://127.0.0.1:1/",
         "_apiUrl": "http://127.0.0.1:5037/api/v1/"
       }
     },
@@ -463,7 +463,7 @@
         "InvestmentsUrl": "http://127.0.0.1:5025/api/v1/",
         "AgentComponentUrl": "http://127.0.0.1:5026/api/v1/",
         "HrmsUrl": "http://127.0.0.1:5033/api/v1/",
-        "UIUrl": "http://127.0.0.1:5036/api/v1/",
+        "UIUrl": "http://127.0.0.1:1/",
         "_apiUrl": "http://127.0.0.1:5037/api/v1/"
       }
     },
@@ -497,7 +497,7 @@
         "InvestmentsUrl": "http://127.0.0.1:5025/api/v1/",
         "AgentComponentUrl": "http://127.0.0.1:5026/api/v1/",
         "HrmsUrl": "http://127.0.0.1:5033/api/v1/",
-        "UIUrl": "http://127.0.0.1:5036/api/v1/",
+        "UIUrl": "http://127.0.0.1:1/",
         "_apiUrl": "http://127.0.0.1:5037/api/v1/"
       }
     },
@@ -531,7 +531,7 @@
         "InvestmentsUrl": "http://127.0.0.1:5025/api/v1/",
         "AgentComponentUrl": "http://127.0.0.1:5026/api/v1/",
         "HrmsUrl": "http://127.0.0.1:5033/api/v1/",
-        "UIUrl": "http://127.0.0.1:5036/api/v1/",
+        "UIUrl": "http://127.0.0.1:1/",
         "_apiUrl": "http://127.0.0.1:5037/api/v1/"
       }
     },
@@ -571,7 +571,7 @@
         "InvestmentsUrl": "http://127.0.0.1:5025/api/v1/",
         "AgentComponentUrl": "http://127.0.0.1:5026/api/v1/",
         "HrmsUrl": "http://127.0.0.1:5033/api/v1/",
-        "UIUrl": "http://127.0.0.1:5036/api/v1/",
+        "UIUrl": "http://127.0.0.1:1/",
         "_apiUrl": "http://127.0.0.1:5037/api/v1/"
       }
     },
@@ -605,7 +605,7 @@
         "InvestmentsUrl": "http://127.0.0.1:5025/api/v1/",
         "AgentComponentUrl": "http://127.0.0.1:5026/api/v1/",
         "HrmsUrl": "http://127.0.0.1:5033/api/v1/",
-        "UIUrl": "http://127.0.0.1:5036/api/v1/",
+        "UIUrl": "http://127.0.0.1:1/",
         "_apiUrl": "http://127.0.0.1:5037/api/v1/"
       }
     },
@@ -639,7 +639,7 @@
         "InvestmentsUrl": "http://127.0.0.1:5025/api/v1/",
         "AgentComponentUrl": "http://127.0.0.1:5026/api/v1/",
         "HrmsUrl": "http://127.0.0.1:5033/api/v1/",
-        "UIUrl": "http://127.0.0.1:5036/api/v1/",
+        "UIUrl": "http://127.0.0.1:1/",
         "_apiUrl": "http://127.0.0.1:5037/api/v1/"
       }
     },
@@ -673,7 +673,7 @@
         "InvestmentsUrl": "http://127.0.0.1:5025/api/v1/",
         "AgentComponentUrl": "http://127.0.0.1:5026/api/v1/",
         "HrmsUrl": "http://127.0.0.1:5033/api/v1/",
-        "UIUrl": "http://127.0.0.1:5036/api/v1/",
+        "UIUrl": "http://127.0.0.1:1/",
         "_apiUrl": "http://127.0.0.1:5037/api/v1/"
       }
     },
@@ -702,7 +702,7 @@
         "SavingsUrl": "http://127.0.0.1:5006/api/v1/",
         "TermUrl": "http://127.0.0.1:5008/api/v1/",
         "ThriftUrl": "http://127.0.0.1:1/",
-        "UIUrl": "http://127.0.0.1:5036/api/v1/",
+        "UIUrl": "http://127.0.0.1:1/",
         "UniteCommonAPIUrl": "http://127.0.0.1:5003/api/v1/",
         "UsermanagementUrl": "http://127.0.0.1:5004/api/v1/",
         "VoucherProcessingUrl": "http://127.0.0.1:5010/api/v1/",
@@ -740,7 +740,7 @@
         "InvestmentsUrl": "http://127.0.0.1:5025/api/v1/",
         "AgentComponentUrl": "http://127.0.0.1:5026/api/v1/",
         "HrmsUrl": "http://127.0.0.1:5033/api/v1/",
-        "UIUrl": "http://127.0.0.1:5036/api/v1/",
+        "UIUrl": "http://127.0.0.1:1/",
         "_apiUrl": "http://127.0.0.1:5037/api/v1/"
       }
     },
@@ -774,7 +774,7 @@
         "InvestmentsUrl": "http://127.0.0.1:5025/api/v1/",
         "AgentComponentUrl": "http://127.0.0.1:5026/api/v1/",
         "HrmsUrl": "http://127.0.0.1:5033/api/v1/",
-        "UIUrl": "http://127.0.0.1:5036/api/v1/",
+        "UIUrl": "http://127.0.0.1:1/",
         "_apiUrl": "http://127.0.0.1:5037/api/v1/"
       }
     },
@@ -808,7 +808,7 @@
         "InvestmentsUrl": "http://127.0.0.1:5025/api/v1/",
         "AgentComponentUrl": "http://127.0.0.1:5026/api/v1/",
         "HrmsUrl": "http://127.0.0.1:5033/api/v1/",
-        "UIUrl": "http://127.0.0.1:5036/api/v1/",
+        "UIUrl": "http://127.0.0.1:1/",
         "_apiUrl": "http://127.0.0.1:5037/api/v1/"
       }
     }

@@ -956,7 +956,7 @@ services:
       DOTNET_ROLL_FORWARD: LatestPatch
   - name: l3_aasami
     display_name: ePACS aasami
-    description: L2-R2 l3_aasami (l3_aasami/Aasami/Aasami.csproj) on port 5036
+    description: L2-R2 l3_aasami (l3_aasami/Aasami/Aasami.csproj) on port 7036
     executable: ${BinaryRoot}\current\dotnet\dotnet.exe
     arguments: ${BinaryRoot}\current\services\l3_aasami\Aasami.dll
     account: ePACSAppSvc
@@ -966,7 +966,7 @@ services:
     group: app
     health_check:
       type: http
-      url: http://127.0.0.1:5036/health
+      url: http://127.0.0.1:7036/health
       timeout_seconds: 15
       expected_status: 200
     recovery:
