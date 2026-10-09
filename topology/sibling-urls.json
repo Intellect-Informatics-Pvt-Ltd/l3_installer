@@ -47,7 +47,7 @@
         "HrmsUrl": "http://127.0.0.1:5033/api/v1/",
         "CrossOrigin": "http://127.0.0.1:5000/",
         "DMSUrl": "http://127.0.0.1:5037/api/v1/",
-        "BioGasComponentUrl": "http://127.0.0.1:1/",
+        "BioGasComponentUrl": "http://127.0.0.1:5014/api/v1/",
         "AasamiUrl": "http://127.0.0.1:7036/api/v1/",
         "LobUrl": "http://127.0.0.1:5038/api/v1/"
       }
@@ -78,6 +78,7 @@
         "GovernanceUrl": "http://127.0.0.1:5021/api/v1/",
         "AssetsUrl": "http://127.0.0.1:5022/api/v1/",
         "LockersUrl": "http://127.0.0.1:5023/api/v1/",
+        "BioGasUrl": "http://127.0.0.1:5014/api/v1/",
         "BorrowingsUrl": "http://127.0.0.1:5024/api/v1/",
         "InvestmentsUrl": "http://127.0.0.1:5025/api/v1/",
         "AgentComponentUrl": "http://127.0.0.1:5026/api/v1/",
@@ -363,6 +364,15 @@
         "AgentComponentUrl": "http://127.0.0.1:5026/api/v1/",
         "HrmsUrl": "http://127.0.0.1:5033/api/v1/",
         "UIUrl": "http://127.0.0.1:1/"
+      }
+    },
+    "l3_biogas": {
+      "APIKeys": {
+        "FASUrl": "http://127.0.0.1:5010/api/v1/",
+        "VoucherProcessingUrl": "http://127.0.0.1:5010/api/v1/",
+        "MembershipUrl": "http://127.0.0.1:5005/api/v1/",
+        "ConfigurationAPIUrl": "http://127.0.0.1:5002/api/v1/",
+        "AssetsUrl": "http://127.0.0.1:5022/api/v1/"
       }
     },
     "l3_borrowings": {

@@ -141,7 +141,7 @@ services:
       reset_after_seconds: 86400
     data_directories: []
 
-  # ---- APPLICATION SERVICES, GENERATED. 28 entries. ----------------------------------
+  # ---- APPLICATION SERVICES, GENERATED. 29 entries. ----------------------------------
   # health_check `tcp` means the module maps no health route in its Program.cs (G31): the
   # installer can prove it is LISTENING, not that it is healthy, and says so.
   - name: l3_PACDetailsAPI
@@ -577,6 +577,36 @@ services:
     health_check:
       type: http
       url: http://127.0.0.1:5017/health/messaging
+      timeout_seconds: 15
+      expected_status: 200
+    recovery:
+      first_failure:
+        action: restart
+        delay_seconds: 30
+      second_failure:
+        action: restart
+        delay_seconds: 60
+      subsequent:
+        action: restart_and_bundle
+        delay_seconds: 120
+      reset_after_seconds: 86400
+    data_directories: []
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${epcfg:state_code}
+      DOTNET_ROLL_FORWARD: LatestPatch
+  - name: l3_biogas
+    display_name: ePACS biogas
+    description: L2-R2 l3_biogas (l3_biogas/Biogas/Biogas.csproj) on port 5014
+    executable: ${BinaryRoot}\current\dotnet\dotnet.exe
+    arguments: ${BinaryRoot}\current\services\l3_biogas\Biogas.dll
+    account: ePACSAppSvc
+    start_order: 130
+    stop_order: 70
+    startup_type: Automatic
+    group: app
+    health_check:
+      type: http
+      url: http://127.0.0.1:5014/health
       timeout_seconds: 15
       expected_status: 200
     recovery:

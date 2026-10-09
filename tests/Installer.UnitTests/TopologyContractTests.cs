@@ -45,16 +45,16 @@ public sealed class TopologyContractTests
     // ── The map itself ───────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Linux_map_carries_the_infrastructure_and_all_28_application_services()
+    public async Task Linux_map_carries_the_infrastructure_and_all_29_application_services()
     {
         var services = await NewLoader().LoadAsync(Topology("service-map.l2r2.linux.yaml"));
 
         var apps = services.Where(s => s.Name.StartsWith("l3_", StringComparison.Ordinal)).ToList();
-        apps.Should().HaveCount(28, "the estate is 26 middleware + the UI + l3_lob; l3_SHG joined the list on 2026-09-13 when it first pinned a port");
-        apps.Select(a => a.Name).Should().Contain(["l3_FAS", "l3_Loans", "l3_ERPClient", "l3_lob", "l3_membership"]);
+        apps.Should().HaveCount(29, "the estate is 27 middleware + the UI + l3_lob; l3_SHG joined the list on 2026-09-13 when it first pinned a port, l3_biogas on 2026-10-09 (L1's BIOGAS sidecar, ported; port 5014)");
+        apps.Select(a => a.Name).Should().Contain(["l3_FAS", "l3_Loans", "l3_ERPClient", "l3_lob", "l3_membership", "l3_biogas"]);
 
         services.Select(s => s.Name).Should().Contain(["ePACSMySQL", "ePACSCache", "ePACSEventing", "ePACSSync", "ePACSInstallerAgent"]);
-        services.Should().HaveCount(33, "5 infrastructure + 28 applications");
+        services.Should().HaveCount(34, "5 infrastructure + 29 applications");
     }
 
     [Fact]
@@ -135,13 +135,13 @@ public sealed class TopologyContractTests
             .ToList();
 
         ports.Should().OnlyHaveUniqueItems();
-        ports.Should().HaveCount(28, "every application service exposes exactly one port");
+        ports.Should().HaveCount(29, "every application service exposes exactly one port");
     }
 
     // ── Applications configuration ───────────────────────────────────────────
 
     [Fact]
-    public void Applications_json_binds_into_ServicesOptions_with_28_entries()
+    public void Applications_json_binds_into_ServicesOptions_with_29_entries()
     {
         var config = new ConfigurationBuilder()
             .AddJsonFile(Topology("appsettings.Applications.json"))
@@ -149,7 +149,7 @@ public sealed class TopologyContractTests
         var options = new ServicesOptions();
         config.GetSection(ServicesOptions.SectionName).Bind(options);
 
-        options.Applications.Should().HaveCount(28);
+        options.Applications.Should().HaveCount(29);
         options.Applications["l3_FAS"].Port.Should().Be(5010);
         options.Applications["l3_FAS"].StartOrder.Should().Be(20);
         options.Applications["l3_FAS"].HealthPath.Should().BeNull();
