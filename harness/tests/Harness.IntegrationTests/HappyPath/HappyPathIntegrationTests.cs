@@ -104,12 +104,19 @@ public sealed class HappyPathIntegrationTests : IAsyncLifetime
             "SELECT * FROM sync_outbox WHERE pacs_id='PACS-AP-0001' AND sequence_no=@seq",
             new { seq = seqNo });
 
-        outboxRow.Should().NotBeNull("a sync_outbox row must be written atomically with the voucher insert (I-2)");
+        // ((object?)row).Should(), not row.Should(): on a `dynamic` Dapper row the call is bound at run
+        // time against the ROW, which answers null for a member it does not have, and NotBeNull() then
+        // throws RuntimeBinderException whether or not the row exists. Casting to object binds the
+        // FluentAssertions extension statically. (Same defect fixed in l3_DMS's integration tests.)
+        ((object?)outboxRow).Should().NotBeNull("a sync_outbox row must be written atomically with the voucher insert (I-2)");
         ((string)outboxRow!.status).Should().BeOneOf("PENDING", "IN_FLIGHT");
         ((string)outboxRow!.entity_type).Should().Be("voucher");
         ((string)outboxRow!.change_type).Should().Be("INSERT");
 
-        var eventId     = (string)outboxRow!.event_id;
+        // event_id is CHAR(36), and MySqlConnector returns a CHAR(36) as System.Guid unless the connection
+        // string sets GuidFormat (nothing in the harness does) - so a (string) cast throws "Cannot convert
+        // type 'System.Guid' to 'string'". ToString() gives the same canonical text whichever the driver returns.
+        string eventId  = outboxRow!.event_id.ToString();
         var payloadHash = (string)outboxRow!.payload_hash;
 
         // ── Step 3: Send envelope to Nldr.Api /api/sync/ingest ────────────────
@@ -148,21 +155,21 @@ public sealed class HappyPathIntegrationTests : IAsyncLifetime
             "SELECT * FROM received_event WHERE event_id=@eventId",
             new { eventId });
 
-        receivedEvent.Should().NotBeNull("NLDR must record the received event (step 9)");
+        ((object?)receivedEvent).Should().NotBeNull("NLDR must record the received event (step 9)");
         ((string)receivedEvent!.apply_status).Should().BeOneOf("APPLIED", "DUPLICATE");
 
         // ── Step 5: Verify nldr_outbox has an ACK row ─────────────────────────
         var ackRow = await nldrDb.QueryFirstOrDefaultAsync<dynamic>(
             "SELECT * FROM nldr_outbox WHERE pacs_id='PACS-AP-0001' AND event_type='nldr.ack'");
 
-        ackRow.Should().NotBeNull("Nldr.Api must enqueue an ACK in nldr_outbox (step 11)");
+        ((object?)ackRow).Should().NotBeNull("Nldr.Api must enqueue an ACK in nldr_outbox (step 11)");
 
         // ── Step 6: Verify NLDR business row exists ───────────────────────────
         var bizRow = await nldrDb.QueryFirstOrDefaultAsync<dynamic>(
             "SELECT * FROM nldr_business_voucher WHERE voucher_id=@id",
             new { id = voucherId });
 
-        bizRow.Should().NotBeNull("NLDR must apply business state (step 8)");
+        ((object?)bizRow).Should().NotBeNull("NLDR must apply business state (step 8)");
 
         // ── Step 7: Simulate ACK received on PACS side ────────────────────────
         await pacsDb.ExecuteAsync(
